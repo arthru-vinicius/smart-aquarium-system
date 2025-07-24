@@ -2,6 +2,11 @@
 
 Sistema de controle inteligente para aquário com interface web, desenvolvido para ESP32 com controle remoto via Wi-Fi.
 
+## Acessos
+
+- Documento do projeto: https://docs.google.com/document/d/1JUZ-81S6PLu8l6RX0EQexuIy7v8EX70O51mkpRhL9EA/edit?usp=sharing
+- Apresentação do projeto: https://www.canva.com/design/DAGtwOHIfjU/PH1nan78RuxoWs_la1JvUQ/edit?utm_content=DAGtwOHIfjU&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton
+
 ## Visão Geral
 
 O Smart Aquarium System é uma solução IoT simples e eficaz para controlar a iluminação de aquários remotamente. O sistema utiliza um ESP32 como controlador principal, oferecendo uma interface web responsiva para controle manual da luminária através de qualquer dispositivo conectado à mesma rede Wi-Fi.
