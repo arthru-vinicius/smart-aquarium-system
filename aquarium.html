@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <title>Controle de Aquário</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg width='64' height='64' viewBox='0 0 64 64' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M32 32m-28 0a28 28 0 1 1 56 0a28 28 0 1 1 -56 0' fill='%23ffd700' stroke='%23ffb000' stroke-width='3'/%3E%3Cpath d='M20 20L44 44M44 20L20 44' stroke='%23ffb000' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
+  <style>
+    body {
+      background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+      min-height: 100vh;
+      margin: 0;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .container {
+      background: rgba(255,255,255,0.95);
+      border-radius: 18px;
+      box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.25);
+      padding: 40px 32px 32px 32px;
+      max-width: 350px;
+      width: 100%;
+      text-align: center;
+      position: relative;
+    }
+    h1 {
+      margin-top: 0;
+      font-size: 1.6rem;
+      color: #2c3e50;
+      letter-spacing: 1px;
+    }
+    .status {
+      margin: 32px 0 24px 0;
+      font-size: 1.2rem;
+      color: #34495e;
+      min-height: 48px;
+      transition: color 0.2s;
+    }
+    .light-indicator {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      margin-right: 8px;
+      transition: all 0.3s;
+    }
+    .light-on {
+      background: #f1c40f;
+      box-shadow: 0 0 15px rgba(241, 196, 15, 0.6);
+    }
+    .light-off {
+      background: #95a5a6;
+      box-shadow: none;
+    }
+    .btn-toggle {
+      background: linear-gradient(90deg, #2c3e50 0%, #34495e 100%);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 14px 36px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(44,62,80,0.10);
+      transition: background 0.2s, transform 0.1s;
+      margin: 8px;
+    }
+    .btn-toggle:active {
+      transform: scale(0.97);
+      background: linear-gradient(90deg, #34495e 0%, #2c3e50 100%);
+    }
+    .btn-status {
+      background: linear-gradient(90deg, #27ae60 0%, #2ecc71 100%);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 12px 28px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(39,174,96,0.10);
+      transition: background 0.2s, transform 0.1s;
+      margin: 8px;
+    }
+    .btn-status:active {
+      transform: scale(0.97);
+      background: linear-gradient(90deg, #2ecc71 0%, #27ae60 100%);
+    }
+    /* Overlay de carregamento */
+    .overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(44, 62, 80, 0.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      transition: opacity 0.2s;
+      opacity: 1;
+      pointer-events: all;
+    }
+    .overlay.hide {
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s 0.2s;
+    }
+    .loader-box {
+      background: #fff;
+      padding: 32px 40px;
+      border-radius: 12px;
+      box-shadow: 0 4px 24px rgba(44,62,80,0.10);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .loader {
+      border: 4px solid #e0e0e0;
+      border-top: 4px solid #34495e;
+      border-radius: 50%;
+      width: 36px;
+      height: 36px;
+      animation: spin 1s linear infinite;
+      margin-bottom: 18px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg);}
+      100% { transform: rotate(360deg);}
+    }
+    .mode-info {
+      font-size: 0.9rem;
+      color: #7f8c8d;
+      margin-top: 16px;
+    }
+    @media (max-width: 480px) {
+      .container { padding: 24px 8px; }
+      .loader-box { padding: 24px 12px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Controle de Aquário</h1>
+    <div class="status" id="status">
+      Pressione <b>Consultar</b> para ver o status atual.
+    </div>
+    <button class="btn-toggle" id="btnToggle">Alternar Luz</button>
+    <button class="btn-status" id="btnStatus">Consultar Status</button>
+    <div class="mode-info" id="modeInfo"></div>
+  </div>
+  <div class="overlay hide" id="overlay">
+    <div class="loader-box">
+      <div class="loader"></div>
+      <div>Carregando...</div>
+    </div>
+  </div>
+  <script>
+    const btnToggle = document.getElementById('btnToggle');
+    const btnStatus = document.getElementById('btnStatus');
+    const status = document.getElementById('status');
+    const modeInfo = document.getElementById('modeInfo');
+    const overlay = document.getElementById('overlay');
+
+    function showOverlay(show) {
+      if (show) {
+        overlay.classList.remove('hide');
+      } else {
+        overlay.classList.add('hide');
+      }
+    }
+
+    function updateStatus(data) {
+      const lightClass = data.luminaria_ligada ? 'light-on' : 'light-off';
+      const lightText = data.luminaria_ligada ? 'LIGADA' : 'DESLIGADA';
+      
+      status.innerHTML = `
+        <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 8px;">
+          <span class="light-indicator ${lightClass}"></span>
+          <span style="font-size:1.8rem;font-weight:700;">${lightText}</span>
+        </div>
+      `;
+      
+      // Simplificado para refletir apenas o modo manual
+      modeInfo.textContent = 'Modo: Controle Manual';
+    }
+
+    btnToggle.addEventListener('click', async () => {
+      showOverlay(true);
+      status.style.color = "#34495e";
+      try {
+        const response = await fetch('http://10.141.68.50/alt', { method: 'GET' });
+        if (!response.ok) throw new Error('Erro ao alternar luz');
+        const data = await response.json();
+        updateStatus(data);
+      } catch (e) {
+        status.style.color = "#e74c3c";
+        status.innerHTML = "Erro ao alternar luz. Tente novamente.";
+        modeInfo.textContent = '';
+      } finally {
+        setTimeout(() => showOverlay(false), 350);
+      }
+    });
+
+    btnStatus.addEventListener('click', async () => {
+      showOverlay(true);
+      status.style.color = "#34495e";
+      try {
+        const response = await fetch('http://10.141.68.50/status', { method: 'GET' });
+        if (!response.ok) throw new Error('Erro ao obter status');
+        const data = await response.json();
+        updateStatus(data);
+      } catch (e) {
+        status.style.color = "#e74c3c";
+        status.innerHTML = "Erro ao consultar status. Tente novamente.";
+        modeInfo.textContent = '';
+      } finally {
+        setTimeout(() => showOverlay(false), 350);
+      }
+    });
+
+    // Carrega o status inicial automaticamente
+    window.addEventListener('load', () => {
+      btnStatus.click();
+    });
+  </script>
+</body>
+</html>
