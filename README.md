@@ -1,184 +1,171 @@
 # Smart Aquarium System
 
-Sistema de controle inteligente para aquário com interface web, desenvolvido para ESP32 com controle remoto via Wi-Fi.
+Controle inteligente de aquário com ESP32, interface web/PWA e backend proxy em PHP.
 
-## Acessos
+O projeto foi evoluído para operação contínua e segura:
+- automação por RTC (DS3231)
+- controle de temperatura e ventoinha com histerese/failsafe
+- OTA protegido por credenciais
+- API com token
+- frontend instalável no Android (PWA)
+- recuperação de Wi-Fi com Access Point de configuração
 
-- Documento do projeto: https://docs.google.com/document/d/1JUZ-81S6PLu8l6RX0EQexuIy7v8EX70O51mkpRhL9EA/edit?usp=sharing
-- Apresentação do projeto: https://www.canva.com/design/DAGtwOHIfjU/PH1nan78RuxoWs_la1JvUQ/edit?utm_content=DAGtwOHIfjU&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton
+## Estado atual do projeto
 
-## Visão Geral
+### Firmware (`firmware/aquarium`)
+- Arquitetura modular em C++ (Arduino/ESP32).
+- Loop principal não bloqueante (funcionalidades locais continuam mesmo sem rede).
+- Módulos:
+  - `light.*`: luminária com botão físico e automação por horário
+  - `temperature.*`: DS18B20 com leitura não bloqueante
+  - `fan.*`: modos AUTO/MANUAL, histerese e cooldown
+  - `rtc_manager.*`: DS3231 + sincronização NTP (com retentativas)
+  - `wifi_manager.*`: reconexão automática + AP de recuperação + persistência de credenciais em NVS
+  - `web_server.*`: API REST local + OTA + portal `/wifi-setup`
 
-O Smart Aquarium System é uma solução IoT simples e eficaz para controlar a iluminação de aquários remotamente. O sistema utiliza um ESP32 como controlador principal, oferecendo uma interface web responsiva para controle manual da luminária através de qualquer dispositivo conectado à mesma rede Wi-Fi.
+### Servidor (`server`)
+- Endpoint oculto via rewrite: `cache-<secret>.js`.
+- Proxy entre navegador e ESP32 (evita expor IP local no frontend).
+- Frontend em `app.html` (SPA leve).
+- PWA dinâmico:
+  - `?manifest=1`
+  - `?sw=1`
+- Estratégia offline: shell cacheado; chamadas de API seguem network-first.
 
-## Arquitetura do Sistema
+## Estrutura do repositório
 
-### Hardware
-- **Microcontrolador**: ESP32-D0WD-V3
-- **Relé**: SSR (Solid State Relay) conectado ao pino GPIO 23
-- **Alimentação**: 5V via USB ou fonte externa
-- **Conectividade**: Wi-Fi 802.11 b/g/n
-
-### Software
-- **Firmware**: Arduino IDE com bibliotecas específicas
-- **Interface**: HTML5 + CSS3 + JavaScript vanilla
-- **Comunicação**: HTTP REST API com JSON
-
-## Tecnologias e Bibliotecas Utilizadas
-
-### ESP32 - Bibliotecas Principais
-
-#### 1. WiFi.h
-```cpp
-#include <WiFi.h>
-```
-**Função**: Biblioteca nativa do ESP32 para conectividade Wi-Fi
-**Uso no projeto**:
-- Configuração de IP estático
-- Conexão automática à rede Wi-Fi
-- Monitoramento do status de conexão
-- Reconexão automática em caso de falha
-
-**Principais métodos utilizados**:
-- `WiFi.config()` - Configuração de IP estático
-- `WiFi.begin()` - Inicialização da conexão
-- `WiFi.status()` - Verificação do status
-- `WiFi.localIP()` - Obtenção do IP atribuído
-
-#### 2. ESPAsyncWebServer.h
-```cpp
-#include <ESPAsyncWebServer.h>
-```
-**Função**: Servidor web assíncrono de alta performance para ESP32
-**Vantagens**:
-- Não bloqueia o loop principal
-- Suporte a múltiplas conexões simultâneas
-- Baixo consumo de recursos
-- Resposta rápida a requisições
-
-**Uso no projeto**:
-- Criação de endpoints REST
-- Gerenciamento de requisições HTTP
-- Configuração de headers CORS
-- Resposta em formato JSON
-
-#### 3. ArduinoJson.h
-```cpp
-#include <ArduinoJson.h>
-```
-**Função**: Biblioteca para serialização/deserialização JSON
-**Uso no projeto**:
-- Formatação de respostas da API
-- Estruturação de dados de status
-- Comunicação padronizada com o frontend
-
-## Comunicação Cliente-Servidor
-
-### Protocolo HTTP REST API
-
-O sistema implementa uma API REST simples com dois endpoints principais:
-
-#### Endpoint: `/alt` (GET)
-**Função**: Alterna o estado da luminária
-**Resposta**:
-```json
-{
-  "luminaria_ligada": true,
-  "modo": "MANUAL",
-  "hora": "--:--",
-  "horario_automatico_ativo": false
-}
+```text
+smart-aquarium-system/
+├─ firmware/
+│  └─ aquarium/
+│     ├─ aquarium.ino
+│     ├─ config.example.h
+│     ├─ wifi_manager.*
+│     ├─ web_server.*
+│     ├─ fan.*
+│     ├─ temperature.*
+│     ├─ light.*
+│     └─ rtc_manager.*
+├─ server/
+│  ├─ .htaccess
+│  ├─ index.php
+│  ├─ app.html
+│  ├─ config.example.php
+│  └─ assets/
+└─ docs/
+   ├─ pinagem-e-montagem-esp32.md
+   └─ deploy-servidor.md
 ```
 
-#### Endpoint: `/status` (GET)
-**Função**: Consulta o status atual do sistema
-**Resposta**: Mesmo formato do endpoint `/alt`
+## Fluxo de funcionamento
 
-### Configuração CORS
+1. O usuário acessa `https://.../cache-<secret>.js`.
+2. O `.htaccess` reescreve para `server/index.php?key=<secret>`.
+3. `index.php` valida o secret.
+4. Sem `?api=`, entrega `app.html`.
+5. Com `?api=...`, faz proxy HTTP para o ESP32 e retorna JSON.
+6. Se `?manifest=1` ou `?sw=1`, entrega recursos PWA dinâmicos.
 
-Para permitir requisições cross-origin do navegador:
+## Endpoints
 
-```cpp
-DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
-DefaultHeaders::Instance().addHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-DefaultHeaders::Instance().addHeader("Access-Control-Allow-Headers", "Content-Type");
-```
+### No servidor (`server/index.php`)
+- `GET /cache-<secret>.js` -> app HTML
+- `GET /cache-<secret>.js?api=status`
+- `GET /cache-<secret>.js?api=toggle`
+- `GET /cache-<secret>.js?api=temperature`
+- `GET /cache-<secret>.js?api=fan_toggle`
+- `GET /cache-<secret>.js?api=fan_speed&value=0..100`
+- `GET /cache-<secret>.js?manifest=1`
+- `GET /cache-<secret>.js?sw=1`
 
-**Por que é necessário**:
-- Navegadores bloqueiam requisições entre origens diferentes por segurança
-- O HTML é aberto localmente (origin 'null')
-- O ESP32 está em IP diferente (10.141.68.50)
-- Headers CORS permitem essa comunicação
+### No ESP32 (`web_server.cpp`)
+- `GET /status`
+- `GET /toggle`
+- `GET /temperature`
+- `GET /fan_toggle`
+- `GET /fan_speed?value=0..100`
+- `GET /update` (OTA)
+- `GET /wifi-setup` (portal de recuperação de Wi-Fi, Basic Auth)
+- `POST /wifi-setup/save` (salva SSID/senha em NVS e reconecta)
 
-### Fluxo de Comunicação
+## Segurança atual
 
-1. **Cliente** faz requisição HTTP GET para ESP32
-2. **ESP32** processa a requisição no handler assíncrono
-3. **ESP32** executa a ação (alternar relé ou consultar status)
-4. **ESP32** formata resposta JSON
-5. **ESP32** envia resposta com headers CORS
-6. **Cliente** recebe e processa a resposta
-7. **Interface** é atualizada com novos dados
+- URL protegida por secret (`cache-<secret>.js`).
+- API do ESP32 protegida por token (`API_AUTH_TOKEN` / `X-Api-Token`).
+- OTA protegido por `OTA_USERNAME`/`OTA_PASSWORD`.
+- Portal Wi-Fi (`/wifi-setup`) reutiliza as credenciais OTA.
+- Bloqueio 403 para rotas não permitidas no `.htaccess`.
+- CORS restrito por origem configurável (`CORS_ALLOWED_ORIGIN`).
 
-## Frontend - Tecnologias Web
+## Recuperação de Wi-Fi
 
-### HTML5
-- Estrutura semântica moderna
-- Meta tags para responsividade
-- Favicon em formato SVG inline
+Se o ESP32 não encontrar/conectar na rede por tempo/tentativas configurados:
+- ativa AP de recuperação (`WIFI_RECOVERY_AP_SSID_PREFIX-XXXXXX`)
+- mantém tentativa de STA em paralelo (`WIFI_AP_STA`)
+- expõe página de configuração em `/wifi-setup`
+- persiste novas credenciais em NVS
+- desativa AP automaticamente quando reconecta
 
-### CSS3
-- Gradientes lineares para visual moderno
-- Flexbox para layout responsivo
-- Transições e animações suaves
-- Media queries para dispositivos móveis
-- Box-shadow e border-radius para design material
+Parâmetros relevantes (`config.h`):
+- `WIFI_RECONNECT_INTERVAL_MS`
+- `WIFI_RECOVERY_TIMEOUT_MS`
+- `WIFI_RECOVERY_MAX_ATTEMPTS`
+- `WIFI_RECOVERY_AP_SSID_PREFIX`
 
-### JavaScript (Vanilla)
-- Fetch API para requisições HTTP assíncronas
-- Promises com async/await
-- Manipulação dinâmica do DOM
-- Event listeners para interatividade
-- Tratamento de erros com try/catch
+## PWA (Android)
 
-#### Exemplo de Requisição:
-```javascript
-const response = await fetch('http://10.141.68.50/alt', { method: 'GET' });
-const data = await response.json();
-updateStatus(data);
-```
+- `app.html` inclui manifest e registro do service worker.
+- Instalação via fluxo nativo do Chrome no Android.
+- `start_url`/`id` usam a URL protegida atual (`cache-<secret>.js`).
+- Em offline, o shell abre; ações de API dependem de rede local com ESP32.
 
-## Configuração de Rede
+## Configuração
 
-### IP Estático
-```cpp
-IPAddress local_IP(10, 141, 68, 50);
-IPAddress gateway(10, 141, 68, 29);
-IPAddress subnet(255, 255, 255, 0);
-```
+### Firmware
+1. Copie `firmware/aquarium/config.example.h` para `firmware/aquarium/config.h`.
+2. Preencha Wi-Fi, horários, token da API e credenciais OTA.
+3. Faça upload do firmware no ESP32.
 
-**Vantagens**:
-- Endereço fixo e previsível
-- Não depende de DHCP
-- Facilita configuração do cliente
-- Evita mudanças de IP após reinicialização
+### Servidor
+1. Copie `server/config.example.php` para `server/config.php`.
+2. Configure:
+   - `secret`
+   - `esp32_ip`
+   - `esp32_port`
+   - `esp32_api_token` (igual ao `API_AUTH_TOKEN` do firmware)
+3. Garanta `mod_rewrite` e leitura do `.htaccess`.
+4. Faça deploy em HTTPS (necessário para PWA instalável no Android).
 
-### Credenciais Wi-Fi
-```cpp
-const char* ssid = "S23 FE";
-const char* password = "czrw8850";
-```
+## CORS: como preencher `CORS_ALLOWED_ORIGIN`
 
-## Características Técnicas
+Use apenas a origem (`scheme + host + porta`), sem caminho e sem barra final.
 
-### Performance
-- **Tempo de resposta**: < 100ms para requisições locais
-- **Consumo de memória**: ~47KB de variáveis globais
-- **Armazenamento**: ~1MB de código compilado
-- **Conexões simultâneas**: Suporte a múltiplos clientes
+Exemplos:
+- correto: `https://boasementestore.com.br`
+- incorreto: `https://boasementestore.com.br/`
+- incorreto: `https://boasementestore.com.br/wp-content/uploads/.cache-api`
 
-### Confiabilidade
-- Reconexão automática Wi-Fi
-- Tratamento de erros no cliente
-- Feedback visual de carregamento
-- Estado persistente do relé
+Se você acessar o app por outro host (ex.: `https://www.boasementestore.com.br`), a origem muda e precisa bater exatamente com o valor configurado.
+
+## Hardware e montagem
+
+A documentação elétrica e de pinagem está em:
+- `docs/pinagem-e-montagem-esp32.md`
+
+Pontos importantes:
+- SSR controla AC: manter isolamento físico e boas práticas de segurança.
+- Ventoinha 12V com GND comum ao ESP32.
+- Recomendado desacoplamento local (100nF/10uF) para estabilidade.
+
+## Notas de operação
+
+- Ausência de Wi-Fi não deve interromper controle local de luminária/ventoinha.
+- NTP falho não bloqueia boot: sistema retenta sincronização depois.
+- APIs de ventilação validam faixa e formato de entrada.
+
+## Roadmap sugerido
+
+- Telemetria de saúde (RSSI, uptime, reset reason) no `/status`
+- Captive portal completo (DNS) no modo AP de recuperação
+- Suporte a múltiplas origens CORS (allowlist)
+- Testes automatizados de contrato da API proxy

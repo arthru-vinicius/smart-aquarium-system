@@ -1,0 +1,4 @@
+# Arquivos de configuração com credenciais reais (nunca versionar)
+firmware/aquarium/config.h
+server/config.php
+.claude/

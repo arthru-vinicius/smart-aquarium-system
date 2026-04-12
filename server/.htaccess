@@ -1,0 +1,25 @@
+Options -Indexes
+
+# Sobrescreve o bloqueio de PHP herdado do wp-content/uploads/.htaccess
+<Files "*.php">
+    <IfModule mod_authz_core.c>
+        Require all granted
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Allow from all
+    </IfModule>
+</Files>
+
+RewriteEngine On
+
+# Roteia cache-<SECRET>.js para index.php passando o secret como ?key=
+# QSA preserva parâmetros adicionais como ?api=status
+RewriteRule ^cache-([a-zA-Z0-9]+)\.js$ index.php?key=$1 [END,QSA]
+
+# Permite ícones usados pelo favicon/PWA
+RewriteRule ^assets/betta-icon-(192|512)\.png$ - [L]
+
+# Bloqueia qualquer acesso direto que não siga o padrão acima
+RewriteCond %{REQUEST_URI} !^/wp-content/uploads/\.cache-api/cache-[a-zA-Z0-9]+\.js
+RewriteRule ^ - [F]

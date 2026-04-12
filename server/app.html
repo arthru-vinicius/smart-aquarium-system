@@ -1,0 +1,1142 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <title>Betta Care</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#070d1a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="?manifest=1">
+  <link rel="icon" type="image/png" href="assets/betta-icon-192.png">
+  <style>
+    /* ── Variáveis de tema ──────────────────────────────── */
+    :root {
+      --c-bg:        #070d1a;
+      --c-surface:   #0d1526;
+      --c-card:      #111d35;
+      --c-border:    #1b2f50;
+      --c-text-1:    #d8e5f5;
+      --c-text-2:    #6580a5;
+      --c-text-3:    #344f70;
+      --c-accent:    #4cc3f7;
+      --c-on:        #4cdbbc;
+      --c-on-dim:    rgba(76, 219, 188, 0.13);
+      --c-off:       #253a52;
+      --c-amber:     #f5a623;
+      --c-amber-dim: rgba(245, 166, 35, 0.11);
+      --c-danger:    #e84040;
+      --nav-h:       68px;
+      --header-h:    56px;
+      --r-sm:        10px;
+      --r-md:        16px;
+      --r-lg:        22px;
+    }
+
+    /* ── Reset ──────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body              { height: 100%; overflow: hidden; }
+
+    body {
+      background: var(--c-bg);
+      color: var(--c-text-1);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* ── Shell ──────────────────────────────────────────── */
+    .app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      height: 100dvh;
+    }
+
+    /* ── Cabeçalho ──────────────────────────────────────── */
+    .header {
+      flex-shrink: 0;
+      height: var(--header-h);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 18px;
+      background: var(--c-bg);
+      border-bottom: 1px solid var(--c-border);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .brand-icon img { width: 100%; height: 100%; object-fit: cover; }
+
+    .brand-name {
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+    }
+
+    .btn-icon {
+      width: 36px;
+      height: 36px;
+      background: var(--c-card);
+      border: 1px solid var(--c-border);
+      border-radius: var(--r-sm);
+      color: var(--c-text-2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s, transform 0.12s;
+    }
+
+    .btn-icon:active     { transform: scale(0.91); }
+    .btn-icon svg        { width: 18px; height: 18px; fill: currentColor; }
+    .btn-icon.spinning svg { animation: spin 0.75s linear infinite; }
+
+    /* ── Área de telas ──────────────────────────────────── */
+    .screens {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .screen {
+      position: absolute;
+      inset: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 18px 16px calc(var(--nav-h) + 22px);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(14px);
+      transition: opacity 0.22s ease, transform 0.22s ease;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .screen.active {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateY(0);
+    }
+
+    /* ── Navegação inferior ─────────────────────────────── */
+    .nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: var(--nav-h);
+      background: var(--c-surface);
+      border-top: 1px solid var(--c-border);
+      display: flex;
+      z-index: 50;
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+
+    .nav-btn {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--c-text-3);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      cursor: pointer;
+      transition: color 0.2s;
+      position: relative;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .nav-btn.active { color: var(--c-accent); }
+
+    .nav-btn.active::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 22%;
+      right: 22%;
+      height: 2px;
+      background: var(--c-accent);
+      border-radius: 0 0 3px 3px;
+    }
+
+    .nav-btn svg   { width: 22px; height: 22px; fill: currentColor; }
+    .nav-label     { font-size: 0.62rem; font-weight: 600; letter-spacing: 0.4px; }
+
+    /* ── Cards genéricos ────────────────────────────────── */
+    .card {
+      background: var(--c-card);
+      border: 1px solid var(--c-border);
+      border-radius: var(--r-md);
+      padding: 16px 18px;
+    }
+
+    .c-label {
+      font-size: 0.63rem;
+      font-weight: 700;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--c-text-2);
+      margin-bottom: 8px;
+    }
+
+    .c-val {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--c-text-1);
+      line-height: 1;
+    }
+
+    .c-sub {
+      font-size: 0.72rem;
+      color: var(--c-text-2);
+      margin-top: 5px;
+    }
+
+    /* ── Pills de estado ────────────────────────────────── */
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 99px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.7px;
+    }
+
+    .pill-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .pill.amber {
+      background: var(--c-amber-dim);
+      color: var(--c-amber);
+    }
+
+    .pill.amber .pill-dot {
+      background: var(--c-amber);
+      box-shadow: 0 0 5px var(--c-amber);
+    }
+
+    .pill.on {
+      background: var(--c-on-dim);
+      color: var(--c-on);
+    }
+
+    .pill.on .pill-dot {
+      background: var(--c-on);
+      box-shadow: 0 0 5px var(--c-on);
+    }
+
+    .pill.off {
+      background: rgba(37, 58, 82, 0.35);
+      color: var(--c-text-2);
+    }
+
+    .pill.off .pill-dot { background: var(--c-off); }
+
+    /* ── Dashboard: card hero de temperatura ────────────── */
+    .temp-hero {
+      background: linear-gradient(150deg, #0a1628 0%, #0d1e3c 100%);
+      border: 1px solid var(--c-border);
+      border-radius: var(--r-lg);
+      padding: 26px 22px 20px;
+      margin-bottom: 12px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .temp-hero::after {
+      content: '';
+      position: absolute;
+      top: -20px;
+      right: -20px;
+      width: 100px;
+      height: 100px;
+      background: radial-gradient(circle, rgba(76, 195, 247, 0.07), transparent 70%);
+      pointer-events: none;
+    }
+
+    .temp-hero-lbl {
+      font-size: 0.62rem;
+      font-weight: 700;
+      letter-spacing: 1.4px;
+      text-transform: uppercase;
+      color: var(--c-accent);
+      margin-bottom: 10px;
+    }
+
+    .temp-hero-num {
+      font-size: 3.5rem;
+      font-weight: 200;
+      letter-spacing: -2px;
+      color: var(--c-text-1);
+      line-height: 1;
+    }
+
+    .temp-hero-unit {
+      font-size: 1.25rem;
+      font-weight: 300;
+      color: var(--c-text-2);
+      margin-left: 2px;
+    }
+
+    /* ── Grid 2 colunas ─────────────────────────────────── */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    /* ── Relógio principal ──────────────────────────────── */
+    .clock-card {
+      background: var(--c-card);
+      border: 1px solid var(--c-border);
+      border-radius: var(--r-md);
+      padding: 20px 18px;
+      text-align: center;
+      margin-bottom: 12px;
+    }
+
+    .clock-lbl {
+      font-size: 0.62rem;
+      font-weight: 700;
+      letter-spacing: 1.3px;
+      text-transform: uppercase;
+      color: var(--c-text-2);
+      margin-bottom: 10px;
+    }
+
+    .clock-digits {
+      font-size: 2.8rem;
+      font-weight: 200;
+      letter-spacing: 4px;
+      color: var(--c-text-1);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .clock-sep { animation: sep-blink 1s step-end infinite; }
+
+    @keyframes sep-blink { 50% { opacity: 0.2; } }
+
+    /* ── Tela Luminária / Ventoinha: hero de estado ──────── */
+    .screen-title {
+      font-size: 0.62rem;
+      font-weight: 700;
+      letter-spacing: 1.8px;
+      text-transform: uppercase;
+      color: var(--c-text-2);
+      margin-bottom: 18px;
+    }
+
+    .state-hero {
+      background: var(--c-card);
+      border: 1px solid var(--c-border);
+      border-radius: var(--r-lg);
+      padding: 28px 20px 22px;
+      text-align: center;
+      margin-bottom: 12px;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.35s, background 0.35s;
+    }
+
+    .state-hero.light-on {
+      border-color: rgba(245, 166, 35, 0.32);
+      background: linear-gradient(160deg, #1b1100, #0f1526);
+    }
+
+    .state-hero.fan-on {
+      border-color: rgba(76, 219, 188, 0.28);
+      background: linear-gradient(160deg, #001c14, #0d1526);
+    }
+
+    .hero-icon {
+      width: 58px;
+      height: 58px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 14px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      transition: background 0.35s, box-shadow 0.35s;
+    }
+
+    .hero-icon svg { width: 26px; height: 26px; fill: currentColor; }
+
+    .light-on .hero-icon {
+      color: var(--c-amber);
+      background: rgba(245, 166, 35, 0.09);
+      box-shadow: 0 0 22px rgba(245, 166, 35, 0.14);
+    }
+
+    .fan-on .hero-icon {
+      color: var(--c-on);
+      background: rgba(76, 219, 188, 0.09);
+      box-shadow: 0 0 22px rgba(76, 219, 188, 0.11);
+    }
+
+    .state-hero:not(.light-on):not(.fan-on) .hero-icon { color: var(--c-text-3); }
+
+    .hero-state {
+      font-size: 1.45rem;
+      font-weight: 700;
+      letter-spacing: 1px;
+      margin-bottom: 6px;
+      transition: color 0.35s;
+    }
+
+    .light-on .hero-state { color: var(--c-amber); }
+    .fan-on   .hero-state { color: var(--c-on);    }
+    .state-hero:not(.light-on):not(.fan-on) .hero-state { color: var(--c-text-2); }
+
+    .hero-sub { font-size: 0.77rem; color: var(--c-text-2); }
+
+    /* ── Linha de programação (Luminária) ───────────────── */
+    .sched-row {
+      display: flex;
+      align-items: center;
+      background: var(--c-card);
+      border: 1px solid var(--c-border);
+      border-radius: var(--r-md);
+      padding: 14px 20px;
+      margin-bottom: 12px;
+    }
+
+    .sched-col     { flex: 1; text-align: center; }
+
+    .sched-lbl {
+      font-size: 0.6rem;
+      font-weight: 700;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--c-text-2);
+      margin-bottom: 4px;
+    }
+
+    .sched-val {
+      font-size: 1.3rem;
+      font-weight: 600;
+      color: var(--c-text-1);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .sched-sep {
+      width: 1px;
+      height: 34px;
+      background: var(--c-border);
+      flex-shrink: 0;
+    }
+
+    /* ── Linha de mini-relógio ──────────────────────────── */
+    .mini-clock-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--c-card);
+      border: 1px solid var(--c-border);
+      border-radius: var(--r-md);
+      padding: 13px 18px;
+      margin-bottom: 16px;
+    }
+
+    .mini-clock-lbl {
+      font-size: 0.63rem;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--c-text-2);
+    }
+
+    .mini-clock-val {
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: var(--c-text-1);
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 1px;
+    }
+
+    /* ── Botões de ação ─────────────────────────────────── */
+    .btn {
+      width: 100%;
+      padding: 15px 20px;
+      border-radius: var(--r-md);
+      font-size: 0.9rem;
+      font-weight: 700;
+      letter-spacing: 0.7px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transition: opacity 0.2s, transform 0.12s;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .btn svg { width: 20px; height: 20px; fill: currentColor; flex-shrink: 0; }
+
+    .btn:active:not(:disabled) { transform: scale(0.975); }
+    .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    .btn-light {
+      background: linear-gradient(90deg, #3d2200, #2a1700);
+      color: var(--c-amber);
+      border: 1px solid rgba(245, 166, 35, 0.2);
+    }
+
+    .btn-fan {
+      background: linear-gradient(90deg, #002019, #001510);
+      color: var(--c-on);
+      border: 1px solid rgba(76, 219, 188, 0.2);
+    }
+
+    /* ── Controle de potência (slider) ──────────────────── */
+    .slider-card {
+      background: var(--c-card);
+      border: 1px solid var(--c-border);
+      border-radius: var(--r-md);
+      padding: 16px 18px;
+      margin-bottom: 12px;
+    }
+
+    .slider-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 13px;
+    }
+
+    .slider-lbl {
+      font-size: 0.63rem;
+      font-weight: 700;
+      letter-spacing: 1.1px;
+      text-transform: uppercase;
+      color: var(--c-text-2);
+    }
+
+    .slider-pct {
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: var(--c-text-1);
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 5px;
+      background: var(--c-border);
+      border-radius: 3px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--c-accent);
+      cursor: pointer;
+      border: 3px solid var(--c-card);
+      box-shadow: 0 0 0 1px var(--c-accent), 0 2px 8px rgba(76, 195, 247, 0.35);
+    }
+
+    input[type="range"]::-moz-range-thumb {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--c-accent);
+      cursor: pointer;
+      border: 3px solid var(--c-card);
+      box-shadow: 0 0 0 1px var(--c-accent);
+    }
+
+    input[type="range"]:disabled {
+      opacity: 0.28;
+      cursor: not-allowed;
+    }
+
+    input[type="range"]:disabled::-webkit-slider-thumb {
+      background: var(--c-off);
+      box-shadow: none;
+      cursor: not-allowed;
+    }
+
+    /* ── Overlay de carregamento ────────────────────────── */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(7, 13, 26, 0.6);
+      backdrop-filter: blur(3px);
+      -webkit-backdrop-filter: blur(3px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      opacity: 1;
+      transition: opacity 0.2s;
+    }
+
+    .overlay.hide { opacity: 0; pointer-events: none; }
+
+    .loader-card {
+      background: var(--c-card);
+      border: 1px solid var(--c-border);
+      border-radius: var(--r-md);
+      padding: 22px 32px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .spinner {
+      width: 28px;
+      height: 28px;
+      border: 3px solid var(--c-border);
+      border-top-color: var(--c-accent);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loader-txt {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--c-text-2);
+      letter-spacing: 0.3px;
+    }
+
+    /* ── Toast de erro ──────────────────────────────────── */
+    .toast {
+      position: fixed;
+      bottom: calc(var(--nav-h) + 10px);
+      left: 12px;
+      right: 12px;
+      background: #180707;
+      border: 1px solid rgba(232, 64, 64, 0.45);
+      border-radius: var(--r-sm);
+      padding: 11px 16px;
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: #ff7070;
+      z-index: 150;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 0.25s, transform 0.25s;
+      pointer-events: none;
+    }
+
+    .toast.show { opacity: 1; transform: translateY(0); }
+
+    /* ── Ajustes para telas pequenas ────────────────────── */
+    @media (max-width: 360px) {
+      .temp-hero-num { font-size: 2.9rem; }
+      .clock-digits  { font-size: 2.3rem; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ── Cabeçalho ─────────────────────────────────────── -->
+  <header class="header">
+    <div class="brand">
+      <div class="brand-icon">
+        <img src="assets/betta-icon-192.png" alt="">
+      </div>
+      <span class="brand-name">Betta Care</span>
+    </div>
+    <button class="btn-icon" id="btn-refresh" title="Atualizar status">
+      <!-- ícone: refresh/reload -->
+      <svg viewBox="0 0 24 24">
+        <path d="M17.65 6.35A7.96 7.96 0 0012 4a8 8 0 00-8 8 8 8 0 008 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18a6 6 0 01-6-6 6 6 0 016-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+      </svg>
+    </button>
+  </header>
+
+  <!-- ── Área de telas ─────────────────────────────────── -->
+  <div class="screens">
+
+    <!-- ───────────────────────────────────────────────── -->
+    <!-- Tela 1: Início (Dashboard)                        -->
+    <!-- ───────────────────────────────────────────────── -->
+    <section class="screen active" id="screen-dashboard">
+
+      <!-- Temperatura em destaque -->
+      <div class="temp-hero">
+        <div class="temp-hero-lbl">Temperatura</div>
+        <div>
+          <span class="temp-hero-num" id="dash-temp-val">—</span>
+          <span class="temp-hero-unit" id="dash-temp-unit"></span>
+        </div>
+      </div>
+
+      <!-- Estado da luminária e da ventoinha -->
+      <div class="grid-2">
+        <div class="card">
+          <div class="c-label">Luminária</div>
+          <div id="dash-light-pill">
+            <span class="pill off"><span class="pill-dot"></span>—</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="c-label">Ventoinha</div>
+          <div id="dash-fan-pill">
+            <span class="pill off"><span class="pill-dot"></span>—</span>
+          </div>
+          <div class="c-sub" id="dash-fan-speed"></div>
+        </div>
+      </div>
+
+      <!-- Relógio do sistema -->
+      <div class="clock-card">
+        <div class="clock-lbl">Hora do Sistema</div>
+        <div class="clock-digits">
+          <span id="clk-h">--</span><span class="clock-sep">:</span><span id="clk-m">--</span><span class="clock-sep">:</span><span id="clk-s">--</span>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ───────────────────────────────────────────────── -->
+    <!-- Tela 2: Luminária                                 -->
+    <!-- ───────────────────────────────────────────────── -->
+    <section class="screen" id="screen-light">
+      <div class="screen-title">Luminária</div>
+
+      <!-- Hero: estado atual -->
+      <div class="state-hero" id="light-hero">
+        <div class="hero-icon" id="light-icon">
+          <!-- ícone: lâmpada -->
+          <svg viewBox="0 0 24 24">
+            <path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/>
+          </svg>
+        </div>
+        <div class="hero-state" id="light-state-text">DESLIGADA</div>
+        <div class="hero-sub"   id="light-state-sub">Aguardando dados</div>
+      </div>
+
+      <!-- Programação horária -->
+      <div class="sched-row">
+        <div class="sched-col">
+          <div class="sched-lbl">Liga</div>
+          <div class="sched-val" id="light-on-time">--:--</div>
+        </div>
+        <div class="sched-sep"></div>
+        <div class="sched-col">
+          <div class="sched-lbl">Desliga</div>
+          <div class="sched-val" id="light-off-time">--:--</div>
+        </div>
+      </div>
+
+      <!-- Mini-relógio -->
+      <div class="mini-clock-row">
+        <span class="mini-clock-lbl">Hora atual</span>
+        <span class="mini-clock-val" id="light-mini-clock">--:--:--</span>
+      </div>
+
+      <!-- Alternar luminária -->
+      <button class="btn btn-light" id="btn-toggle-light">
+        <svg viewBox="0 0 24 24">
+          <path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/>
+        </svg>
+        Alternar Luminária
+      </button>
+    </section>
+
+    <!-- ───────────────────────────────────────────────── -->
+    <!-- Tela 3: Ventoinha & Temperatura                   -->
+    <!-- ───────────────────────────────────────────────── -->
+    <section class="screen" id="screen-fan">
+      <div class="screen-title">Ventoinha &amp; Temperatura</div>
+
+      <!-- Temperatura -->
+      <div class="card" style="margin-bottom:12px">
+        <div class="c-label">Temperatura</div>
+        <div class="c-val" id="fan-temp-val">—</div>
+      </div>
+
+      <!-- Hero: estado da ventoinha -->
+      <div class="state-hero" id="fan-hero" style="margin-bottom:12px">
+        <div class="hero-icon">
+          <!-- ícone: ventoinha (fan) -->
+          <svg viewBox="0 0 24 24">
+            <path d="M12 11a1 1 0 00-1 1 1 1 0 001 1 1 1 0 001-1 1 1 0 00-1-1m.5-9c4.5 0 4.61 3.57 2.25 4.75-1 .48-1.43 1.54-1.62 2.47.48-.14.98-.22 1.51-.22 2.43 0 4.36 1.93 4.36 4.36 0 2.43-1.93 4.71-4.36 4.71-1.54 0-2.9-.82-3.64-2.07-.74 1.25-2.1 2.07-3.64 2.07C4.93 18.07 3 15.79 3 13.36 3 10.93 4.93 9 7.36 9c.53 0 1.03.08 1.51.22-.19-.93-.63-1.99-1.62-2.47C4.89 5.57 5 2 9.5 2c.5 0 1 .17 1.5.5.5-.33 1-.5 1.5-.5m2.14 8.36c-1.64 0-3 1.36-3 3s1.36 3 3 3 3-1.36 3-3-1.36-3-3-3m-7.28 0c-1.64 0-3 1.36-3 3s1.36 3 3 3 3-1.36 3-3-1.36-3-3-3z"/>
+          </svg>
+        </div>
+        <div class="hero-state" id="fan-state-text">DESLIGADA</div>
+        <div class="hero-sub"   id="fan-speed-disp">0%</div>
+      </div>
+
+      <!-- Controle de potência -->
+      <div class="slider-card">
+        <div class="slider-header">
+          <span class="slider-lbl">Potência</span>
+          <span class="slider-pct" id="slider-display">0%</span>
+        </div>
+        <input type="range" id="fan-speed-slider" min="0" max="100" value="0" disabled>
+      </div>
+
+      <!-- Alternar ventoinha -->
+      <button class="btn btn-fan" id="btn-toggle-fan">
+        <svg viewBox="0 0 24 24">
+          <path d="M12 11a1 1 0 00-1 1 1 1 0 001 1 1 1 0 001-1 1 1 0 00-1-1m.5-9c4.5 0 4.61 3.57 2.25 4.75-1 .48-1.43 1.54-1.62 2.47.48-.14.98-.22 1.51-.22 2.43 0 4.36 1.93 4.36 4.36 0 2.43-1.93 4.71-4.36 4.71-1.54 0-2.9-.82-3.64-2.07-.74 1.25-2.1 2.07-3.64 2.07C4.93 18.07 3 15.79 3 13.36 3 10.93 4.93 9 7.36 9c.53 0 1.03.08 1.51.22-.19-.93-.63-1.99-1.62-2.47C4.89 5.57 5 2 9.5 2c.5 0 1 .17 1.5.5.5-.33 1-.5 1.5-.5m2.14 8.36c-1.64 0-3 1.36-3 3s1.36 3 3 3 3-1.36 3-3-1.36-3-3-3m-7.28 0c-1.64 0-3 1.36-3 3s1.36 3 3 3 3-1.36 3-3-1.36-3-3-3z"/>
+        </svg>
+        Alternar Ventoinha
+      </button>
+    </section>
+
+  </div>
+
+  <!-- ── Navegação inferior ────────────────────────────── -->
+  <nav class="nav">
+    <button class="nav-btn active" data-target="dashboard">
+      <!-- ícone: casa -->
+      <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+      <span class="nav-label">Início</span>
+    </button>
+    <button class="nav-btn" data-target="light">
+      <!-- ícone: lâmpada -->
+      <svg viewBox="0 0 24 24">
+        <path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/>
+      </svg>
+      <span class="nav-label">Luminária</span>
+    </button>
+    <button class="nav-btn" data-target="fan">
+      <!-- ícone: ventoinha -->
+      <svg viewBox="0 0 24 24">
+        <path d="M12 11a1 1 0 00-1 1 1 1 0 001 1 1 1 0 001-1 1 1 0 00-1-1m.5-9c4.5 0 4.61 3.57 2.25 4.75-1 .48-1.43 1.54-1.62 2.47.48-.14.98-.22 1.51-.22 2.43 0 4.36 1.93 4.36 4.36 0 2.43-1.93 4.71-4.36 4.71-1.54 0-2.9-.82-3.64-2.07-.74 1.25-2.1 2.07-3.64 2.07C4.93 18.07 3 15.79 3 13.36 3 10.93 4.93 9 7.36 9c.53 0 1.03.08 1.51.22-.19-.93-.63-1.99-1.62-2.47C4.89 5.57 5 2 9.5 2c.5 0 1 .17 1.5.5.5-.33 1-.5 1.5-.5m2.14 8.36c-1.64 0-3 1.36-3 3s1.36 3 3 3 3-1.36 3-3-1.36-3-3-3m-7.28 0c-1.64 0-3 1.36-3 3s1.36 3 3 3 3-1.36 3-3-1.36-3-3-3z"/>
+      </svg>
+      <span class="nav-label">Ventoinha</span>
+    </button>
+  </nav>
+
+</div>
+
+<!-- ── Overlay de carregamento ───────────────────────── -->
+<div class="overlay hide" id="overlay">
+  <div class="loader-card">
+    <div class="spinner"></div>
+    <div class="loader-txt">Aguarde...</div>
+  </div>
+</div>
+
+<!-- ── Toast de notificação ──────────────────────────── -->
+<div class="toast" id="toast"></div>
+
+<script>
+  // ---------------------------------------------------------------------------
+  // URL base: derivada da URL atual, sem query string.
+  // O secret já está embutido no caminho (cache-<SECRET>.js).
+  // ---------------------------------------------------------------------------
+  const BASE_URL = window.location.href.split('?')[0];
+
+  /**
+   * Monta a URL completa para um endpoint da API.
+   * @param {string} endpoint - Nome do endpoint
+   * @param {Object} [params] - Parâmetros adicionais de query string
+   * @returns {string}
+   */
+  const apiUrl = (endpoint, params = {}) => {
+    const qs = new URLSearchParams({ api: endpoint, ...params });
+    return `${BASE_URL}?${qs}`;
+  };
+
+  // ---------------------------------------------------------------------------
+  // Relógio: sincronizado com o ESP32 e incrementado localmente a cada segundo
+  // ---------------------------------------------------------------------------
+  let _clockBase = null;  // { h, m, s } — hora recebida do ESP32
+  let _clockRef  = 0;     // timestamp (ms) no momento da sincronização
+
+  /**
+   * Inicializa o relógio com a hora atual do ESP32.
+   * @param {string} timeStr - Formato "HH:MM"
+   */
+  function syncClock(timeStr) {
+    if (!timeStr || timeStr === '--:--') return;
+    const parts = timeStr.split(':');
+    const h = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    if (isNaN(h) || isNaN(m)) return;
+    _clockBase = { h, m, s: 0 };
+    _clockRef  = Date.now();
+  }
+
+  /**
+   * Calcula a hora atual com base na última sincronização.
+   * @returns {{ h: number, m: number, s: number }|null}
+   */
+  function clockNow() {
+    if (!_clockBase) return null;
+    const elapsed = Math.floor((Date.now() - _clockRef) / 1000);
+    const total   = _clockBase.h * 3600 + _clockBase.m * 60 + _clockBase.s + elapsed;
+    return {
+      h: Math.floor(total / 3600) % 24,
+      m: Math.floor((total % 3600) / 60),
+      s: total % 60,
+    };
+  }
+
+  /** Formata número com zero à esquerda. @param {number} n @returns {string} */
+  const z2 = (n) => String(n).padStart(2, '0');
+
+  /**
+   * Atualiza todos os displays de relógio na interface (chamado a cada segundo).
+   */
+  function tickClock() {
+    const t = clockNow();
+    document.getElementById('clk-h').textContent = t ? z2(t.h) : '--';
+    document.getElementById('clk-m').textContent = t ? z2(t.m) : '--';
+    document.getElementById('clk-s').textContent = t ? z2(t.s) : '--';
+    document.getElementById('light-mini-clock').textContent =
+      t ? `${z2(t.h)}:${z2(t.m)}:${z2(t.s)}` : '--:--:--';
+  }
+
+  setInterval(tickClock, 1000);
+
+  // ---------------------------------------------------------------------------
+  // Navegação entre telas
+  // ---------------------------------------------------------------------------
+  const navBtns = document.querySelectorAll('.nav-btn');
+  const screens = document.querySelectorAll('.screen');
+
+  /**
+   * Exibe a tela solicitada e marca o botão correspondente como ativo.
+   * @param {string} targetId - ID sem o prefixo "screen-"
+   */
+  function switchScreen(targetId) {
+    screens.forEach((s) => s.classList.remove('active'));
+    navBtns.forEach((b) => b.classList.remove('active'));
+
+    const screen = document.getElementById(`screen-${targetId}`);
+    const btn    = document.querySelector(`.nav-btn[data-target="${targetId}"]`);
+    if (screen) screen.classList.add('active');
+    if (btn)    btn.classList.add('active');
+  }
+
+  navBtns.forEach((btn) =>
+    btn.addEventListener('click', () => switchScreen(btn.dataset.target))
+  );
+
+  // ---------------------------------------------------------------------------
+  // Overlay e toast
+  // ---------------------------------------------------------------------------
+  const overlayEl  = document.getElementById('overlay');
+  const toastEl    = document.getElementById('toast');
+  let   _toastTimer = null;
+
+  /** @param {boolean} visible */
+  function setOverlay(visible) {
+    overlayEl.classList.toggle('hide', !visible);
+  }
+
+  /**
+   * Exibe uma mensagem de toast temporária.
+   * @param {string} msg
+   */
+  function showToast(msg) {
+    clearTimeout(_toastTimer);
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    _toastTimer = setTimeout(() => toastEl.classList.remove('show'), 5000);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Atualização da interface com dados do ESP32
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Atualiza todos os elementos da interface com os dados recebidos do ESP32.
+   * @param {Object} data - Resposta JSON do endpoint /status ou /toggle
+   */
+  function updateUI(data) {
+    const light = data.light       || {};
+    const temp  = data.temperature || {};
+    const fan   = data.fan         || {};
+    const rtc   = data.rtc         || {};
+
+    const lightOn = light.on          ?? false;
+    const fanOn   = fan.on            ?? false;
+    const fanPct  = fan.speed_percent ?? 0;
+
+    // --- Temperatura ---
+    const hasTemp  = temp.available && temp.celsius != null;
+    const tempText = hasTemp ? String(temp.celsius) : '—';
+    const tempUnit = hasTemp ? '°C' : '';
+
+    document.getElementById('dash-temp-val').textContent  = tempText;
+    document.getElementById('dash-temp-unit').textContent = tempUnit;
+    document.getElementById('fan-temp-val').textContent   = hasTemp ? `${temp.celsius} °C` : '—';
+
+    // --- Dashboard: pills de estado ---
+    document.getElementById('dash-light-pill').innerHTML = lightOn
+      ? `<span class="pill amber"><span class="pill-dot"></span>LIGADA</span>`
+      : `<span class="pill off"><span class="pill-dot"></span>DESLIGADA</span>`;
+
+    document.getElementById('dash-fan-pill').innerHTML = fanOn
+      ? `<span class="pill on"><span class="pill-dot"></span>LIGADA</span>`
+      : `<span class="pill off"><span class="pill-dot"></span>DESLIGADA</span>`;
+
+    document.getElementById('dash-fan-speed').textContent = fanOn ? `${fanPct}%` : '';
+
+    // --- Tela Luminária ---
+    document.getElementById('light-hero').className =
+      `state-hero ${lightOn ? 'light-on' : ''}`;
+
+    document.getElementById('light-state-text').textContent =
+      lightOn ? 'LIGADA' : 'DESLIGADA';
+
+    document.getElementById('light-state-sub').textContent =
+      lightOn ? 'Luminária ativa' : 'Luminária desligada';
+
+    document.getElementById('light-on-time').textContent  = rtc.on_time  ?? '--:--';
+    document.getElementById('light-off-time').textContent = rtc.off_time ?? '--:--';
+
+    // --- Tela Ventoinha ---
+    document.getElementById('fan-hero').className =
+      `state-hero ${fanOn ? 'fan-on' : ''}`;
+
+    document.getElementById('fan-state-text').textContent =
+      fanOn ? 'LIGADA' : 'DESLIGADA';
+
+    document.getElementById('fan-speed-disp').textContent =
+      fanOn ? `${fanPct}%` : '0%';
+
+    // Slider: ativo somente quando ventoinha está ligada
+    const slider = document.getElementById('fan-speed-slider');
+    slider.disabled = !fanOn;
+    slider.value    = fanPct;
+    document.getElementById('slider-display').textContent = `${fanPct}%`;
+
+    // --- Hora do RTC: sincroniza relógio local ---
+    if (rtc.available !== false && rtc.time) {
+      syncClock(rtc.time);
+      tickClock();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Chamadas de API
+  // ---------------------------------------------------------------------------
+  let _busy = false;
+
+  /**
+   * Executa uma chamada ao proxy PHP e atualiza a interface.
+   * @param {string} endpoint - Nome do endpoint
+   * @param {Object} [params] - Parâmetros adicionais de query
+   */
+  async function callApi(endpoint, params = {}) {
+    if (_busy) return;
+    _busy = true;
+
+    const refreshBtn     = document.getElementById('btn-refresh');
+    const btnToggleLight = document.getElementById('btn-toggle-light');
+    const btnToggleFan   = document.getElementById('btn-toggle-fan');
+
+    setOverlay(true);
+    refreshBtn.classList.add('spinning');
+    refreshBtn.disabled     = true;
+    btnToggleLight.disabled = true;
+    btnToggleFan.disabled   = true;
+
+    try {
+      const res  = await fetch(apiUrl(endpoint, params));
+      const json = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(json.error || `Erro HTTP ${res.status}`);
+      }
+
+      updateUI(json);
+
+    } catch (err) {
+      showToast('Falha ao comunicar com o aquário: ' + err.message);
+    } finally {
+      _busy = false;
+      setTimeout(() => {
+        setOverlay(false);
+        refreshBtn.classList.remove('spinning');
+        refreshBtn.disabled     = false;
+        btnToggleLight.disabled = false;
+        btnToggleFan.disabled   = false;
+      }, 260);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Controle do slider de potência da ventoinha
+  // ---------------------------------------------------------------------------
+  const fanSlider = document.getElementById('fan-speed-slider');
+
+  /** Atualiza o display de percentual em tempo real durante o arraste. */
+  fanSlider.addEventListener('input', () => {
+    document.getElementById('slider-display').textContent = `${fanSlider.value}%`;
+  });
+
+  /** Envia o valor ao ESP32 ao soltar o controle. */
+  fanSlider.addEventListener('change', () => {
+    callApi('fan_speed', { value: fanSlider.value });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Event listeners dos botões
+  // ---------------------------------------------------------------------------
+  document.getElementById('btn-refresh')
+    .addEventListener('click', () => callApi('status'));
+
+  document.getElementById('btn-toggle-light')
+    .addEventListener('click', () => callApi('toggle'));
+
+  document.getElementById('btn-toggle-fan')
+    .addEventListener('click', () => callApi('fan_toggle'));
+
+  // ---------------------------------------------------------------------------
+  // Registra o service worker para habilitar a instalação como PWA
+  // ---------------------------------------------------------------------------
+  /**
+   * Registra o service worker da aplicação para habilitar instalação PWA.
+   */
+  function registerServiceWorker() {
+    if (!('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.register('?sw=1').catch((err) => {
+      console.warn('Falha ao registrar service worker:', err);
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Inicialização
+  // ---------------------------------------------------------------------------
+  window.addEventListener('load', () => {
+    registerServiceWorker();
+    callApi('status');
+  });
+</script>
+
+</body>
+</html>
