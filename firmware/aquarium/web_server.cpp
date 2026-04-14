@@ -293,10 +293,10 @@ void webserver_init() {
   _server.on("/wifi-setup/save", HTTP_POST, [](AsyncWebServerRequest *request) {
     if (!_require_setup_auth(request)) return;
 
-    AsyncWebParameter *ssidParam = request->hasParam("ssid", true)
+    const AsyncWebParameter *ssidParam = request->hasParam("ssid", true)
       ? request->getParam("ssid", true)
       : (request->hasParam("ssid") ? request->getParam("ssid") : nullptr);
-    AsyncWebParameter *passParam = request->hasParam("password", true)
+    const AsyncWebParameter *passParam = request->hasParam("password", true)
       ? request->getParam("password", true)
       : (request->hasParam("password") ? request->getParam("password") : nullptr);
 

@@ -2,6 +2,7 @@
 #include "config.h"
 #include "temperature.h"
 #include <Arduino.h>
+#include <esp_arduino_version.h>
 
 // ---------------------------------------------------------------------------
 // Configuração do PWM (LEDC)
@@ -9,6 +10,12 @@
 static const int LEDC_CHANNEL    = 0;
 static const int LEDC_FREQ_HZ    = 25000;   // 25 kHz — frequência típica para ventoinhas PWM 4 pinos
 static const int LEDC_RESOLUTION = 8;       // 8 bits → valores 0–255
+
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+#define FAN_LEDC_TARGET PIN_FAN
+#else
+#define FAN_LEDC_TARGET LEDC_CHANNEL
+#endif
 
 #ifndef FAN_FAILSAFE_SPEED
 #define FAN_FAILSAFE_SPEED FAN_SPEED_LOW
@@ -91,7 +98,7 @@ static void _apply_speed(int pct) {
   pct        = constrain(pct, 0, 100);
   _pwm_val   = (int)((long)pct * 255L / 100L);
   _speed_pct = pct;
-  ledcWrite(LEDC_CHANNEL, _pwm_val);
+  ledcWrite(FAN_LEDC_TARGET, _pwm_val);
 }
 
 /**
@@ -126,8 +133,15 @@ static void _enter_manual_off() {
 // ---------------------------------------------------------------------------
 
 void fan_init() {
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+  if (!ledcAttach(PIN_FAN, LEDC_FREQ_HZ, LEDC_RESOLUTION)) {
+    Serial.println("[Fan] Falha ao configurar PWM LEDC");
+    return;
+  }
+#else
   ledcSetup(LEDC_CHANNEL, LEDC_FREQ_HZ, LEDC_RESOLUTION);
   ledcAttachPin(PIN_FAN, LEDC_CHANNEL);
+#endif
   _apply_speed(0);
   Serial.println("[Fan] Inicializada — desligada (modo AUTO)");
 }

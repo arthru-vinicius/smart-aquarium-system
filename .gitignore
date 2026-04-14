@@ -2,3 +2,4 @@
 firmware/aquarium/config.h
 server/config.php
 .claude/
+.idea/
