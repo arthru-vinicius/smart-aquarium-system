@@ -7,23 +7,24 @@
  *   - ?manifest=1 → retorna o manifest PWA dinâmico
  *   - ?sw=1       → retorna o service worker dinâmico
  *   - Sem ?api    → serve a interface web (app.html)
- *   - Com ?api    → repassa a requisição ao ESP32 via curl e retorna o JSON
+ *   - Com ?api    → publica/le via MQTT TLS e retorna JSON
  *
  * O secret é injetado pela reescrita do .htaccess: cache-<SECRET>.js → ?key=<SECRET>
  */
 
 ini_set('display_errors', 0);
-error_reporting(0);
+ini_set('log_errors', '1');
+error_reporting(E_ALL);
 
 // ---------------------------------------------------------------------------
 // Carrega configuração
 // ---------------------------------------------------------------------------
-$config        = require __DIR__ . '/config.php';
-$SECRET        = $config['secret'];
-$ESP32_IP      = $config['esp32_ip'];
-$ESP32_PORT    = $config['esp32_port'];
-$ESP32_API_TOKEN = trim((string)($config['esp32_api_token'] ?? ''));
-$ESP32_TIMEOUT = $config['esp32_timeout'];
+$config      = require __DIR__ . '/config.php';
+$SECRET      = $config['secret'];
+$MQTT_HOST    = $config['mqtt_host'];
+$MQTT_PORT    = (int)$config['mqtt_port'];
+$MQTT_USER    = $config['mqtt_user'];
+$MQTT_PASS    = $config['mqtt_password'];
 
 // ---------------------------------------------------------------------------
 // Valida secret (enviado pelo .htaccess via rewrite: ?key=<SECRET>)
@@ -215,7 +216,7 @@ JS;
 }
 
 // ---------------------------------------------------------------------------
-// Roteamento: sem ?api → serve o HTML; com ?api=<endpoint> → proxy ESP32
+// Roteamento: sem ?api → serve o HTML; com ?api=<endpoint> → proxy MQTT
 // ---------------------------------------------------------------------------
 $api = isset($_GET['api']) ? trim($_GET['api']) : null;
 
@@ -227,9 +228,13 @@ if ($api === null) {
 }
 
 // ---------------------------------------------------------------------------
-// Modo proxy: repassa requisição para o ESP32
+// Modo proxy: publica comandos no HiveMQ e/ou lê estado retido do ESP32
 // ---------------------------------------------------------------------------
-$allowed = ['status', 'toggle', 'temperature', 'fan_toggle', 'fan_speed'];
+$allowed = [
+    'status', 'toggle', 'temperature', 'fan_toggle', 'fan_speed',
+    'logs', 'logs_clear', 'diag_mqtt',
+    'rtc_sync', 'fan_config', 'light_schedule',
+];
 if (!in_array($api, $allowed, true)) {
     http_response_code(400);
     header('Content-Type: application/json');
@@ -237,68 +242,217 @@ if (!in_array($api, $allowed, true)) {
     exit;
 }
 
-$url = "http://{$ESP32_IP}:{$ESP32_PORT}/{$api}";
-
-// Para fan_speed: valida e repassa o parâmetro value ao ESP32
-if ($api === 'fan_speed') {
-    if (!isset($_GET['value'])) {
-        http_response_code(400);
-        header('Content-Type: application/json');
-        echo json_encode(['error' => 'Parâmetro value obrigatório para fan_speed']);
-        exit;
-    }
-
-    $rawFanSpeed = trim((string)$_GET['value']);
-    if ($rawFanSpeed === '' || !preg_match('/^\d{1,3}$/', $rawFanSpeed)) {
-        http_response_code(400);
-        header('Content-Type: application/json');
-        echo json_encode(['error' => 'Parâmetro value inválido (use inteiro de 0 a 100)']);
-        exit;
-    }
-
-    $fanSpeed = (int)$rawFanSpeed;
-    if ($fanSpeed < 0 || $fanSpeed > 100) {
-        http_response_code(400);
-        header('Content-Type: application/json');
-        echo json_encode(['error' => 'Parâmetro value fora do intervalo (0-100)']);
-        exit;
-    }
-
-    $url .= '?value=' . $fanSpeed;
-}
-
-$headers = ['Accept: application/json'];
-if ($ESP32_API_TOKEN !== '') {
-    $headers[] = 'X-Api-Token: ' . $ESP32_API_TOKEN;
-}
-
-$ch = curl_init($url);
-curl_setopt_array($ch, [
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_TIMEOUT        => $ESP32_TIMEOUT,
-    CURLOPT_CONNECTTIMEOUT => $ESP32_TIMEOUT,
-    CURLOPT_HTTPHEADER     => $headers,
-]);
-
-$body   = curl_exec($ch);
-$status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-$error  = curl_error($ch);
-curl_close($ch);
-
 header('Content-Type: application/json');
 if (!empty($_SERVER['HTTP_ORIGIN']) && $_SERVER['HTTP_ORIGIN'] === $origin) {
     header('Access-Control-Allow-Origin: ' . $origin);
     header('Vary: Origin');
 }
 
-if ($body === false || !empty($error)) {
-    http_response_code(502);
+$includeDetails = isset($_GET['debug']) && $_GET['debug'] === '1';
+$mqttClientPath = __DIR__ . '/mqtt_client.php';
+if (!is_file($mqttClientPath)) {
+    http_response_code(500);
     echo json_encode([
-        'error'   => 'ESP32 inacessível',
-        'details' => $error,
+        'error' => 'Modulo interno MQTT ausente no servidor.',
+        'hint'  => 'Publique o arquivo mqtt_client.php junto com index.php.',
     ]);
+    error_log('[cache-api] mqtt_client.php ausente no servidor.');
     exit;
 }
 
-http_response_code($status ?: 502);
-echo $body;
+require_once $mqttClientPath;
+
+/**
+ * @brief Envia erro JSON padronizado para API e registra no error_log.
+ */
+function api_fail(
+    int $status,
+    string $message,
+    ?Throwable $exception = null,
+    bool $includeDetails = false
+): void {
+    http_response_code($status);
+
+    $payload = ['error' => $message];
+    if ($exception !== null) {
+        $payload['hint'] = 'Verifique mqtt_host/mqtt_port/mqtt_user/mqtt_password e saida TLS MQTT (porta 8883).';
+        if ($includeDetails) {
+            $payload['details'] = $exception->getMessage();
+        }
+        error_log(sprintf(
+            '[cache-api] %s | %s in %s:%d',
+            $message,
+            $exception->getMessage(),
+            $exception->getFile(),
+            $exception->getLine()
+        ));
+    } else {
+        error_log('[cache-api] ' . $message);
+    }
+
+    echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+}
+
+/**
+ * @brief Valida horário no formato HH:MM (24h).
+ */
+function is_valid_hhmm(string $time): bool
+{
+    if (!preg_match('/^\d{2}:\d{2}$/', $time)) {
+        return false;
+    }
+
+    [$h, $m] = array_map('intval', explode(':', $time));
+    return $h >= 0 && $h <= 23 && $m >= 0 && $m <= 59;
+}
+
+// Despacha a requisição da API
+try {
+    switch ($api) {
+
+        case 'status':
+        case 'temperature':  // temperatura está inclusa no payload de aquarium/status
+            echo json_encode(mqtt_get_status(
+                $MQTT_HOST, $MQTT_PORT, $MQTT_USER, $MQTT_PASS
+            ));
+            break;
+
+        case 'toggle':
+            echo json_encode(mqtt_send_command(
+                $MQTT_HOST, $MQTT_PORT, $MQTT_USER, $MQTT_PASS,
+                'aquarium/cmd/light', 'toggle'
+            ));
+            break;
+
+        case 'fan_toggle':
+            echo json_encode(mqtt_send_command(
+                $MQTT_HOST, $MQTT_PORT, $MQTT_USER, $MQTT_PASS,
+                'aquarium/cmd/fan', 'toggle'
+            ));
+            break;
+
+        case 'fan_speed':
+            if (!isset($_GET['value'])) {
+                http_response_code(400);
+                echo json_encode(['error' => 'Parâmetro value obrigatório para fan_speed']);
+                break;
+            }
+            $fanSpeed = filter_var($_GET['value'], FILTER_VALIDATE_INT,
+                                   ['options' => ['min_range' => 0, 'max_range' => 100]]);
+            if ($fanSpeed === false || $fanSpeed === null) {
+                http_response_code(400);
+                echo json_encode(['error' => 'Parâmetro value inválido (use inteiro de 0 a 100)']);
+                break;
+            }
+            echo json_encode(mqtt_send_command(
+                $MQTT_HOST, $MQTT_PORT, $MQTT_USER, $MQTT_PASS,
+                'aquarium/cmd/fan/speed', (string)$fanSpeed
+            ));
+            break;
+
+        case 'rtc_sync':
+            echo json_encode(mqtt_send_command(
+                $MQTT_HOST, $MQTT_PORT, $MQTT_USER, $MQTT_PASS,
+                'aquarium/cmd/rtc/sync', 'sync', 4800
+            ));
+            break;
+
+        case 'fan_config':
+            if (!isset($_GET['trigger']) || !isset($_GET['off'])) {
+                http_response_code(400);
+                echo json_encode([
+                    'error' => 'Parâmetros trigger e off são obrigatórios para fan_config',
+                ]);
+                break;
+            }
+
+            $trigger = filter_var($_GET['trigger'], FILTER_VALIDATE_FLOAT);
+            $off     = filter_var($_GET['off'], FILTER_VALIDATE_FLOAT);
+            if ($trigger === false || $off === false) {
+                http_response_code(400);
+                echo json_encode([
+                    'error' => 'Parâmetros trigger/off inválidos (use número decimal).',
+                ]);
+                break;
+            }
+
+            $trigger = round((float)$trigger, 1);
+            $off     = round((float)$off, 1);
+            if ($trigger < 15.0 || $trigger > 45.0 || $off < 10.0 || $off > 44.5 || $trigger <= $off) {
+                http_response_code(400);
+                echo json_encode([
+                    'error' => 'Valores fora da faixa segura (trigger 15.0..45.0, off 10.0..44.5, trigger > off).',
+                ]);
+                break;
+            }
+
+            $payload = json_encode(
+                ['trigger' => $trigger, 'off' => $off],
+                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+            );
+
+            echo json_encode(mqtt_send_command(
+                $MQTT_HOST, $MQTT_PORT, $MQTT_USER, $MQTT_PASS,
+                'aquarium/cmd/fan/config', $payload
+            ));
+            break;
+
+        case 'light_schedule':
+            if (!isset($_GET['on']) || !isset($_GET['off'])) {
+                http_response_code(400);
+                echo json_encode([
+                    'error' => 'Parâmetros on e off são obrigatórios para light_schedule',
+                ]);
+                break;
+            }
+
+            $on  = trim((string)$_GET['on']);
+            $off = trim((string)$_GET['off']);
+            if (!is_valid_hhmm($on) || !is_valid_hhmm($off)) {
+                http_response_code(400);
+                echo json_encode([
+                    'error' => 'Formato inválido. Use HH:MM (24h).',
+                ]);
+                break;
+            }
+
+            $payload = json_encode(
+                ['on' => $on, 'off' => $off],
+                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+            );
+            echo json_encode(mqtt_send_command(
+                $MQTT_HOST, $MQTT_PORT, $MQTT_USER, $MQTT_PASS,
+                'aquarium/cmd/light/schedule', $payload
+            ));
+            break;
+
+        case 'logs':
+            echo json_encode([
+                'logs' => mqtt_get_logs(
+                    $MQTT_HOST, $MQTT_PORT, $MQTT_USER, $MQTT_PASS
+                )
+            ]);
+            break;
+
+        case 'logs_clear':
+            mqtt_clear_logs($MQTT_HOST, $MQTT_PORT, $MQTT_USER, $MQTT_PASS);
+            echo json_encode(['ok' => true]);
+            break;
+
+        case 'diag_mqtt':
+            if (!$includeDetails) {
+                http_response_code(400);
+                echo json_encode([
+                    'error' => 'Use ?debug=1 para habilitar diagnostico de conectividade.',
+                ]);
+                break;
+            }
+            echo json_encode(
+                mqtt_diag_connectivity($MQTT_HOST, $MQTT_PORT, $MQTT_USER, $MQTT_PASS),
+                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+            );
+            break;
+    }
+} catch (Throwable $e) {
+    api_fail(502, 'Falha ao comunicar com o broker MQTT.', $e, $includeDetails);
+}

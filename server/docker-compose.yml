@@ -1,0 +1,20 @@
+services:
+  aquarium-php:
+    image: php:8.3-fpm-alpine
+    container_name: aquarium-php
+    restart: unless-stopped
+    volumes:
+      - /home/ec2-user/apps/rm-cache-runtime:/var/www/rm-cache-runtime:ro
+    working_dir: /var/www/rm-cache-runtime
+    networks:
+      - apps_gateway_net
+    healthcheck:
+      test: ["CMD-SHELL", "php-fpm -t || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  apps_gateway_net:
+    external: true
+    name: apps_gateway_net

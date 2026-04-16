@@ -13,23 +13,27 @@
 #define WIFI_RECOVERY_MAX_ATTEMPTS  12        // ou após esse número de tentativas sem sucesso
 #define WIFI_RECOVERY_AP_SSID_PREFIX "Aquarium-Setup"
 
-// --- Rede (IP estático) ------------------------------------------------------
-#define NET_LOCAL_IP   "10.141.68.50"
-#define NET_GATEWAY    "10.141.68.29"
+// --- Rede (IP estático ou DHCP) -----------------------------------------------
+// Defina NET_LOCAL_IP como "0.0.0.0" para usar DHCP (o IP atribuído aparece no
+// Serial Monitor). Use IP estático para facilitar o acesso ao OTA — escolha um
+// número alto (ex: .200) fora da faixa DHCP do roteador para evitar conflitos.
+#define NET_LOCAL_IP   "0.0.0.0"
+#define NET_GATEWAY    "192.168.100.1"
 #define NET_SUBNET     "255.255.255.0"
 
 // --- Pinos de hardware -------------------------------------------------------
 #define PIN_SSR        23   // Relé SSR40DA — controle da luminária LED
-#define PIN_DS18B20     4   // DS18B20 — sensor de temperatura (OneWire)
+#define PIN_DS18B20    19   // DS18B20 — sensor de temperatura (OneWire)
 #define PIN_BUTTON     18   // Push button — liga/desliga luminária (INPUT_PULLUP)
 #define PIN_POT        34   // Potenciômetro B10K — controle de velocidade da ventoinha (ADC)
-#define PIN_FAN        25   // Saída PWM da ventoinha (LEDC — evitar pinos ADC2 com Wi-Fi ativo)
+#define PIN_FAN        17   // Gate do MOSFET IRLB8721 (PWM LEDC da ventoinha 2 fios)
 
 // DS3231SN usa I2C padrão do ESP32: SDA = GPIO 21, SCL = GPIO 22
 
 // --- Horário automático da luminária (DS3231SN) ------------------------------
 // A automação é sempre ativa: o botão físico/web apenas sobrepõe o estado
 // atual e a rotina volta a agir na próxima transição de horário.
+// A interface também pode alterar estes horários em runtime (persistidos em NVS).
 #define RTC_ON_HOUR    10   // hora de ligar  (0–23)
 #define RTC_ON_MIN      0   // minuto de ligar (0–59)
 #define RTC_OFF_HOUR   17   // hora de desligar (0–23)
@@ -44,6 +48,7 @@
 // --- Controle automático da ventoinha ----------------------------------------
 // Histérese: liga acima de TRIGGER, inicia cooldown abaixo de OFF.
 // O intervalo entre os dois valores evita liga/desliga rápido (hunting).
+// A interface também pode alterar estes thresholds em runtime (persistidos em NVS).
 #define TEMP_FAN_TRIGGER    29.0f   // °C — temperatura para ligar a ventoinha
 #define TEMP_FAN_OFF        27.5f   // °C — temperatura para iniciar cooldown (< TRIGGER)
 #define FAN_COOLDOWN_MIN    30      // minutos de funcionamento após atingir TEMP_FAN_OFF
@@ -54,6 +59,11 @@
 #define FAN_SPEED_HIGH      80      // Δ ≤ 3,0°C — aquecimento significativo
 #define FAN_SPEED_MAX       100     // Δ >  3,0°C — situação crítica
 #define FAN_FAILSAFE_SPEED  30      // velocidade usada no AUTO se temperatura ficar indisponível
+
+// Fan 2 fios (Molex) via MOSFET: piso operacional e impulso de partida
+#define FAN_MIN_RUNNING_PCT   25    // duty mínimo para rotação estável quando pct > 0
+#define FAN_STARTUP_BOOST_PCT 65    // impulso inicial para vencer inércia do motor
+#define FAN_STARTUP_BOOST_MS  350UL // duração do impulso (não-bloqueante)
 
 // Dados de temperatura são considerados stale após este tempo sem leitura válida
 #define TEMP_MAX_STALE_MS   5000UL
@@ -70,4 +80,15 @@
 // Interface acessível em: http://<IP_DO_ESP32>/update
 // Também protege o portal de recuperação Wi-Fi: /wifi-setup
 #define OTA_USERNAME   "admin"
-#define OTA_PASSWORD   "aquarium"
+#define OTA_PASSWORD   "dMFijb9W"
+
+// --- MQTT (HiveMQ Cloud) -----------------------------------------------------
+// Broker gerenciado gratuito — nenhuma instalação necessária no servidor.
+// Crie uma conta em https://console.hivemq.cloud e configure as credenciais.
+// Dois usuários distintos são recomendados: um para o ESP32, outro para o PHP.
+#define MQTT_BROKER_HOST    "SEU_CLUSTER.s1.eu.hivemq.cloud"
+#define MQTT_BROKER_PORT    8883                  // TLS/SSL — não usar 8884 (WebSocket)
+#define MQTT_USER           "betta-care-esp32"    // usuário criado no painel HiveMQ
+#define MQTT_PASSWORD       "SENHA_DO_ESP32_AQUI"
+#define MQTT_CLIENT_ID      "aquarium-esp32"      // deve ser único por dispositivo
+#define MQTT_TEMP_THRESHOLD 0.1f                  // Publicar se temperatura mudar > 0.1 °C

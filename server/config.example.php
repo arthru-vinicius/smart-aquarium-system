@@ -9,13 +9,12 @@ return [
     // Gere uma string aleatória, ex: openssl rand -hex 16
     'secret' => 'REPLACE_WITH_RANDOM_32_CHAR_STRING',
 
-    // IP estático do ESP32 na rede local
-    'esp32_ip'      => '10.141.68.50',
-    'esp32_port'    => 80,
-
-    // Token compartilhado com o firmware do ESP32 (API_AUTH_TOKEN em firmware/config.h)
-    'esp32_api_token' => 'REPLACE_WITH_THE_SAME_TOKEN_USED_BY_ESP32',
-
-    // Timeout das requisições curl para o ESP32 (segundos)
-    'esp32_timeout' => 5,
+    // --- MQTT TLS (HiveMQ Cloud) ----------------------------------------------
+    // Fluxo atual do servidor PHP: conexao MQTT segura (TLS) no broker.
+    // Use os dados de host + porta TLS do painel HiveMQ.
+    // Crie um usuário específico para o PHP no painel: https://console.hivemq.cloud
+    'mqtt_host'     => 'SEU_CLUSTER.s1.eu.hivemq.cloud',
+    'mqtt_port'     => 8883,
+    'mqtt_user'     => 'betta-care-php',
+    'mqtt_password' => 'SENHA_DO_PHP_AQUI',
 ];

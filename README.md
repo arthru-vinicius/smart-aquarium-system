@@ -1,12 +1,14 @@
 # Smart Aquarium System
 
-Controle inteligente de aquário com ESP32, interface web/PWA e backend proxy em PHP.
+Controle inteligente de aquário com ESP32, interface web/PWA e backend proxy em PHP + MQTT TLS (porta 8883).
 
 O projeto foi evoluído para operação contínua e segura:
 - automação por RTC (DS3231)
 - controle de temperatura e ventoinha com histerese/failsafe
+- ventoinha 12V 2 fios via MOSFET com boost de partida
 - OTA protegido por credenciais
 - API com token
+- thresholds/horários ajustáveis pela interface (persistência em NVS)
 - frontend instalável no Android (PWA)
 - recuperação de Wi-Fi com Access Point de configuração
 
@@ -18,14 +20,22 @@ O projeto foi evoluído para operação contínua e segura:
 - Módulos:
   - `light.*`: luminária com botão físico e automação por horário
   - `temperature.*`: DS18B20 com leitura não bloqueante
-  - `fan.*`: modos AUTO/MANUAL, histerese e cooldown
+  - `fan.*`: modos AUTO/MANUAL, histerese/cooldown e partida assistida para fan 2 fios
   - `rtc_manager.*`: DS3231 + sincronização NTP (com retentativas)
   - `wifi_manager.*`: reconexão automática + AP de recuperação + persistência de credenciais em NVS
   - `web_server.*`: API REST local + OTA + portal `/wifi-setup`
 
+### Pinagem efetiva
+- `GPIO18`: push button
+- `GPIO21/22`: I2C do DS3231
+- `GPIO23`: SSR da luminária
+- `GPIO19`: DS18B20
+- `GPIO34`: potenciômetro (ADC1)
+- `GPIO17`: gate do MOSFET da ventoinha 2 fios
+
 ### Servidor (`server`)
 - Endpoint oculto via rewrite: `cache-<secret>.js`.
-- Proxy entre navegador e ESP32 (evita expor IP local no frontend).
+- Proxy entre navegador e broker MQTT (HiveMQ), sem expor IP local do ESP32 no frontend.
 - Frontend em `app.html` (SPA leve).
 - PWA dinâmico:
   - `?manifest=1`
@@ -53,6 +63,7 @@ smart-aquarium-system/
 │  ├─ config.example.php
 │  └─ assets/
 └─ docs/
+   ├─ clock-module-schema.avif
    ├─ pinagem-e-montagem-esp32.md
    └─ deploy-servidor.md
 ```
@@ -63,7 +74,7 @@ smart-aquarium-system/
 2. O `.htaccess` reescreve para `server/index.php?key=<secret>`.
 3. `index.php` valida o secret.
 4. Sem `?api=`, entrega `app.html`.
-5. Com `?api=...`, faz proxy HTTP para o ESP32 e retorna JSON.
+5. Com `?api=...`, publica/lê via MQTT no broker e retorna JSON.
 6. Se `?manifest=1` ou `?sw=1`, entrega recursos PWA dinâmicos.
 
 ## Endpoints
@@ -75,6 +86,9 @@ smart-aquarium-system/
 - `GET /cache-<secret>.js?api=temperature`
 - `GET /cache-<secret>.js?api=fan_toggle`
 - `GET /cache-<secret>.js?api=fan_speed&value=0..100`
+- `GET /cache-<secret>.js?api=rtc_sync`
+- `GET /cache-<secret>.js?api=fan_config&trigger=<float>&off=<float>`
+- `GET /cache-<secret>.js?api=light_schedule&on=HH:MM&off=HH:MM`
 - `GET /cache-<secret>.js?manifest=1`
 - `GET /cache-<secret>.js?sw=1`
 
@@ -111,6 +125,9 @@ Parâmetros relevantes (`config.h`):
 - `WIFI_RECOVERY_TIMEOUT_MS`
 - `WIFI_RECOVERY_MAX_ATTEMPTS`
 - `WIFI_RECOVERY_AP_SSID_PREFIX`
+- `FAN_MIN_RUNNING_PCT`
+- `FAN_STARTUP_BOOST_PCT`
+- `FAN_STARTUP_BOOST_MS`
 
 ## PWA (Android)
 
@@ -121,6 +138,27 @@ Parâmetros relevantes (`config.h`):
 
 ## Configuração
 
+## Dependências de Build (Firmware)
+
+- Core ESP32 (Arduino): `3.3.7` (versão usada nos logs de compilação do projeto)
+- `Adafruit BusIO`: `1.17.4`
+- `ArduinoJson`: `7.4.3`
+- `Async TCP`: `3.4.10`
+- `DallasTemperature`: `4.0.6`
+- `ElegantOTA`: `3.1.7`
+- `ESP Async WebServer`: `3.10.3`
+- `OneWire`: `2.3.8`
+- `PubSubClient`: `2.8`
+- `RTClib`: `2.1.4` (depende de `Adafruit BusIO`)
+
+Como verificar a versão do core ESP32 no seu ambiente:
+
+1. Arduino IDE -> `Tools` -> `Board` -> `Boards Manager` -> procure `esp32` (Espressif Systems) e veja a versão instalada.
+2. Pelo log de compilação, procure um caminho como:
+   - `.../packages/esp32/hardware/esp32/<VERSAO>/...`
+3. Exemplo real já visto neste projeto:
+   - `.../packages/esp32/hardware/esp32/3.3.7/...`
+
 ### Firmware
 1. Copie `firmware/aquarium/config.example.h` para `firmware/aquarium/config.h`.
 2. Preencha Wi-Fi, horários, token da API e credenciais OTA.
@@ -130,31 +168,51 @@ Parâmetros relevantes (`config.h`):
 1. Copie `server/config.example.php` para `server/config.php`.
 2. Configure:
    - `secret`
-   - `esp32_ip`
-   - `esp32_port`
-   - `esp32_api_token` (igual ao `API_AUTH_TOKEN` do firmware)
+   - `mqtt_host`
+   - `mqtt_port` (TLS MQTT: `8883`)
+   - `mqtt_user`
+   - `mqtt_password`
 3. Garanta `mod_rewrite` e leitura do `.htaccess`.
 4. Faça deploy em HTTPS (necessário para PWA instalável no Android).
+
+## Atualização OTA (passo a passo)
+
+1. Conecte o ESP32 na mesma rede do seu computador/celular.
+2. Descubra o IP do ESP32:
+   - pelo Serial Monitor (linha `Conectado! IP: ...`)
+   - ou no roteador (lista de clientes DHCP)
+3. Abra no navegador: `http://<IP_DO_ESP32>/update`
+4. Faça login com `OTA_USERNAME` e `OTA_PASSWORD` do `config.h`.
+5. Compile o firmware e gere o `.bin` (Arduino IDE/PlatformIO).
+6. No painel OTA, selecione o arquivo `.bin` e envie.
+7. Aguarde o progresso até 100%; o ESP32 reinicia automaticamente.
+8. Pós-update:
+   - verifique no Serial se o boot ocorreu sem erro
+   - confirme `/status` respondendo
+   - valide hora do RTC e comandos (luz/fan) normalmente.
 
 ## CORS: como preencher `CORS_ALLOWED_ORIGIN`
 
 Use apenas a origem (`scheme + host + porta`), sem caminho e sem barra final.
 
 Exemplos:
-- correto: `https://boasementestore.com.br`
-- incorreto: `https://boasementestore.com.br/`
-- incorreto: `https://boasementestore.com.br/wp-content/uploads/.cache-api`
+- correto: `https://dominio.com.br`
+- incorreto: `https://dominio.com.br/`
+- incorreto: `https://dominio.com.br/wp-content/uploads/.cache-api`
 
-Se você acessar o app por outro host (ex.: `https://www.boasementestore.com.br`), a origem muda e precisa bater exatamente com o valor configurado.
+Se você acessar o app por outro host (ex.: `https://www.dominio.com.br`), a origem muda e precisa bater exatamente com o valor configurado.
 
 ## Hardware e montagem
 
 A documentação elétrica e de pinagem está em:
 - `docs/pinagem-e-montagem-esp32.md`
+- `docs/clock-module-schema.avif` (diagrama visual auxiliar do módulo de relógio)
 
 Pontos importantes:
 - SSR controla AC: manter isolamento físico e boas práticas de segurança.
-- Ventoinha 12V com GND comum ao ESP32.
+- Ventoinha 12V 2 fios (Molex) via MOSFET IRLB8721 em low-side.
+- Diodo 1N4007 em paralelo com a fan para flyback.
+- GND da fonte 12V em comum com o GND do ESP32.
 - Recomendado desacoplamento local (100nF/10uF) para estabilidade.
 
 ## Notas de operação

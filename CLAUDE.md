@@ -32,7 +32,7 @@ Este projeto usa o **Arduino IDE** para compilar e gravar o firmware no ESP32.
 
 O servidor fica em `server/` e é hospedado dentro de um WordPress existente.
 
-1. Copie `server/config.example.php` para `server/config.php` e defina o secret e o IP do ESP32
+1. Copie `server/config.example.php` para `server/config.php` e defina `secret` + credenciais MQTT
 2. Suba os arquivos de `server/` para `/wp-content/uploads/.cache-api/` no servidor via FTP/SSH
 3. A interface fica acessível em: `https://boasementestore.com.br/wp-content/uploads/.cache-api/cache-<SECRET>.js`
 4. Para testar localmente: `php -S localhost:8080 -t server/` e acessar `http://localhost:8080/index.php?key=<SECRET>`
@@ -43,11 +43,11 @@ O servidor fica em `server/` e é hospedado dentro de um WordPress existente.
 |---|---|---|
 | Placa de desenvolvimento | ESP32-WROOM-32D | — |
 | Relé SSR (luminária) | SSR40DA | GPIO 23 |
-| Termômetro | DS18B20 (à prova d'água) | GPIO 4 (definido em `config.h`) |
+| Termômetro | DS18B20 (à prova d'água) | GPIO 19 (definido em `config.h`) |
 | Módulo RTC | DS3231SN | I2C (SDA=21, SCL=22) |
 | Push button (luminária) | — | GPIO 18 (definido em `config.h`) |
 | Potenciômetro (ventoinha) | B10K | GPIO 34 ADC (definido em `config.h`) |
-| Saída PWM (ventoinha) | — | GPIO 25 (definido em `config.h`) |
+| Controle da ventoinha 2 fios | IRLB8721 (gate) | GPIO 17 (definido em `config.h`) |
 
 Datasheet do ESP32-WROOM-32D: `docs/esp32-wroom-32d_datasheet_en.pdf`
 
@@ -63,15 +63,15 @@ firmware/aquarium/          ← Pasta do sketch Arduino (nome = nome do .ino)
   wifi_manager.{h,cpp}      ← Conexão e reconexão Wi-Fi
   light.{h,cpp}             ← Relé SSR40DA + push button + debounce
   temperature.{h,cpp}       ← Leitura DS18B20 (DallasTemperature)
-  fan.{h,cpp}               ← ADC potenciômetro + PWM LEDC
+  fan.{h,cpp}               ← ADC potenciômetro + PWM LEDC no MOSFET (fan 2 fios)
   rtc_manager.{h,cpp}       ← DS3231SN via RTClib + NTP sync + automação por horário
   web_server.{h,cpp}        ← ESPAsyncWebServer + ArduinoJson + ElegantOTA
 
 server/                     ← Deploy no WordPress via FTP/SSH
-  index.php                 ← Proxy PHP: serve app.html ou repassa para ESP32
+  index.php                 ← Proxy PHP: serve app.html e integra com MQTT
   app.html                  ← Interface web (SPA)
   .htaccess                 ← Rewrite: cache-<SECRET>.js → index.php?key=SECRET
-  config.php                ← GITIGNORED — secret e IP do ESP32
+  config.php                ← GITIGNORED — secret e credenciais MQTT
   config.example.php        ← Template versionado
 ```
 
@@ -82,11 +82,11 @@ Browser → https://boasementestore.com.br/.../cache-<SECRET>.js
               ↓ .htaccess rewrite
           index.php?key=<SECRET>
               ↓ sem ?api         → serve app.html
-              ↓ com ?api=status  → curl http://10.141.68.50/status  → retorna JSON
-              ↓ com ?api=toggle  → curl http://10.141.68.50/toggle  → retorna JSON
+              ↓ com ?api=status  → lê aquarium/status no broker MQTT
+              ↓ com ?api=toggle  → publica comando em aquarium/cmd/light
 ```
 
-O browser nunca acessa o ESP32 diretamente — toda comunicação passa pelo proxy PHP.
+O browser nunca acessa o ESP32 diretamente — toda comunicação passa pelo proxy PHP + MQTT.
 
 ### Endpoints do ESP32
 
@@ -95,6 +95,8 @@ O browser nunca acessa o ESP32 diretamente — toda comunicação passa pelo pro
 | `GET /status` | Retorna JSON completo do sistema sem alterar estado |
 | `GET /toggle` | Alterna luminária (a automação por horário permanece ativa) |
 | `GET /temperature` | Retorna apenas leitura de temperatura |
+| `GET /fan_toggle` | Alterna ventoinha (override manual até próximo RTC_ON) |
+| `GET /fan_speed?value=0..100` | Ajusta velocidade manual da ventoinha |
 | `GET /update` | Interface ElegantOTA para upload de firmware (auth: config.h) |
 
 ### Comportamento da automação
@@ -123,6 +125,6 @@ A automação por horário é **sempre ativa** — não há botão para desligá
 - ✅ Controle da luminária via web e botão físico (SSR40DA)
 - ✅ Automação da luminária por horário via DS3231SN + sincronização NTP
 - ✅ OTA de firmware via ElegantOTA
-- ⬜ Leitura de temperatura via DS18B20
-- ⬜ Controle da ventoinha (on/off e RPM via potenciômetro B10K)
-- ⬜ Interface web exibindo temperatura e ventoinha
+- ✅ Leitura de temperatura via DS18B20
+- ✅ Controle da ventoinha 2 fios via MOSFET (on/off e velocidade via potenciômetro/web)
+- ✅ Interface web exibindo temperatura e ventoinha

@@ -631,6 +631,94 @@
       letter-spacing: 0.3px;
     }
 
+    /* ── Modal de configuração oculta ───────────────────── */
+    .cfg-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(7, 13, 26, 0.72);
+      backdrop-filter: blur(3px);
+      -webkit-backdrop-filter: blur(3px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 180;
+      padding: 18px;
+      opacity: 1;
+      transition: opacity 0.2s;
+    }
+
+    .cfg-modal-backdrop.hide { opacity: 0; pointer-events: none; }
+
+    .cfg-modal {
+      width: min(420px, 100%);
+      background: var(--c-card);
+      border: 1px solid var(--c-border);
+      border-radius: var(--r-md);
+      padding: 18px 16px 14px;
+    }
+
+    .cfg-title {
+      font-size: 0.72rem;
+      letter-spacing: 1.3px;
+      font-weight: 700;
+      color: var(--c-text-2);
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+
+    .cfg-field { margin-bottom: 12px; }
+
+    .cfg-field label {
+      display: block;
+      font-size: 0.63rem;
+      font-weight: 700;
+      letter-spacing: 1.1px;
+      text-transform: uppercase;
+      color: var(--c-text-2);
+      margin-bottom: 6px;
+    }
+
+    .cfg-field input {
+      width: 100%;
+      padding: 12px 11px;
+      background: #081224;
+      border: 1px solid var(--c-border);
+      border-radius: 10px;
+      color: var(--c-text-1);
+      font-size: 0.95rem;
+      outline: none;
+    }
+
+    .cfg-field input:focus {
+      border-color: rgba(76, 195, 247, 0.6);
+      box-shadow: 0 0 0 2px rgba(76, 195, 247, 0.15);
+    }
+
+    .cfg-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .cfg-btn {
+      flex: 1;
+      border: 1px solid var(--c-border);
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 0.83rem;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      background: #081224;
+      color: var(--c-text-1);
+      cursor: pointer;
+    }
+
+    .cfg-btn.primary {
+      background: linear-gradient(90deg, #1d4d74, #153c5a);
+      border-color: #2b648f;
+      color: #dff4ff;
+    }
+
     /* ── Toast de erro ──────────────────────────────────── */
     .toast {
       position: fixed;
@@ -657,6 +745,36 @@
     @media (max-width: 360px) {
       .temp-hero-num { font-size: 2.9rem; }
       .clock-digits  { font-size: 2.3rem; }
+    }
+
+    /* ── Tela de logs ────────────────────────────────────── */
+    .screen-pad {
+      padding: 16px;
+    }
+
+    .log-block {
+      background: #050a14;
+      border: 1px solid var(--c-border);
+      border-radius: var(--r-md);
+      padding: 14px 16px;
+      font-family: 'Courier New', monospace;
+      font-size: .73rem;
+      color: var(--c-text-1);
+      overflow-y: auto;
+      max-height: calc(100dvh - var(--header-h) - var(--nav-h) - 100px);
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .log-empty { color: var(--c-text-3); font-style: italic; }
+    .log-ts    { color: var(--c-accent); user-select: none; }
+    .log-msg   { color: var(--c-text-1); }
+
+    .row-between {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
   </style>
 </head>
@@ -812,6 +930,23 @@
       </button>
     </section>
 
+    <!-- ───────────────────────────────────────────────── -->
+    <!-- Tela 4: Logs do sistema                           -->
+    <!-- ───────────────────────────────────────────────── -->
+    <section class="screen" id="screen-logs">
+      <div class="screen-pad">
+        <div class="row-between" style="margin-bottom:14px">
+          <span class="c-label" style="font-size:.8rem">REGISTRO DO SISTEMA</span>
+          <button class="btn-icon" id="btn-clear-logs" title="Limpar logs">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+              <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zm2.46-7.12 1.41-1.41L12 12.59l2.12-2.12 1.41 1.41L13.41 14l2.12 2.12-1.41 1.41L12 15.41l-2.12 2.12-1.41-1.41L10.59 14l-2.13-2.12zM15.5 4l-1-1h-5l-1 1H5v2h14V4z"/>
+            </svg>
+          </button>
+        </div>
+        <div class="log-block" id="log-output"><span class="log-empty">Carregando logs...</span></div>
+      </div>
+    </section>
+
   </div>
 
   <!-- ── Navegação inferior ────────────────────────────── -->
@@ -835,6 +970,13 @@
       </svg>
       <span class="nav-label">Ventoinha</span>
     </button>
+    <button class="nav-btn" data-target="logs" aria-label="Logs">
+      <!-- ícone: gráfico de barras (histórico) -->
+      <svg viewBox="0 0 24 24" fill="currentColor">
+        <path d="M20 3H4a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/>
+      </svg>
+      <span class="nav-label">Logs</span>
+    </button>
   </nav>
 
 </div>
@@ -844,6 +986,25 @@
   <div class="loader-card">
     <div class="spinner"></div>
     <div class="loader-txt">Aguarde...</div>
+  </div>
+</div>
+
+<!-- ── Modal oculto de configuração ───────────────────── -->
+<div class="cfg-modal-backdrop hide" id="cfg-modal-backdrop">
+  <div class="cfg-modal">
+    <div class="cfg-title" id="cfg-title">Configuração</div>
+    <div class="cfg-field">
+      <label id="cfg-label-1" for="cfg-input-1">Campo 1</label>
+      <input id="cfg-input-1" type="text" autocomplete="off">
+    </div>
+    <div class="cfg-field">
+      <label id="cfg-label-2" for="cfg-input-2">Campo 2</label>
+      <input id="cfg-input-2" type="text" autocomplete="off">
+    </div>
+    <div class="cfg-actions">
+      <button class="cfg-btn" id="cfg-cancel-btn" type="button">Cancelar</button>
+      <button class="cfg-btn primary" id="cfg-save-btn" type="button">Atualizar</button>
+    </div>
   </div>
 </div>
 
@@ -867,6 +1028,70 @@
     const qs = new URLSearchParams({ api: endpoint, ...params });
     return `${BASE_URL}?${qs}`;
   };
+
+  const uiCfgState = {
+    fanTrigger: 29.0,
+    fanOff: 27.5,
+    lightOn: '10:00',
+    lightOff: '17:00',
+  };
+
+  const cfgModalBackdrop = document.getElementById('cfg-modal-backdrop');
+  const cfgModalTitle    = document.getElementById('cfg-title');
+  const cfgLabel1        = document.getElementById('cfg-label-1');
+  const cfgLabel2        = document.getElementById('cfg-label-2');
+  const cfgInput1        = document.getElementById('cfg-input-1');
+  const cfgInput2        = document.getElementById('cfg-input-2');
+  const cfgCancelBtn     = document.getElementById('cfg-cancel-btn');
+  const cfgSaveBtn       = document.getElementById('cfg-save-btn');
+
+  let _cfgModalType = '';
+
+  const z1 = (v) => Number(v).toFixed(1);
+  const isValidHhmm = (v) => /^([01]\d|2[0-3]):([0-5]\d)$/.test(v);
+
+  function closeConfigModal() {
+    _cfgModalType = '';
+    cfgModalBackdrop.classList.add('hide');
+  }
+
+  function openFanConfigModal() {
+    _cfgModalType = 'fan';
+    cfgModalTitle.textContent = 'Configuração de Ventoinha';
+    cfgLabel1.textContent = 'GATILHO DE FAN';
+    cfgLabel2.textContent = 'DESLIGAR FAN';
+    cfgInput1.type = 'number';
+    cfgInput2.type = 'number';
+    cfgInput1.step = '0.1';
+    cfgInput2.step = '0.1';
+    cfgInput1.min = '15';
+    cfgInput1.max = '45';
+    cfgInput2.min = '10';
+    cfgInput2.max = '44.5';
+    cfgInput1.value = z1(uiCfgState.fanTrigger);
+    cfgInput2.value = z1(uiCfgState.fanOff);
+    cfgModalBackdrop.classList.remove('hide');
+    cfgInput1.focus();
+  }
+
+  function openLightScheduleModal() {
+    _cfgModalType = 'light';
+    cfgModalTitle.textContent = 'Programação da Luminária';
+    cfgLabel1.textContent = 'LIGAR LUMINÁRIA';
+    cfgLabel2.textContent = 'DESLIGAR LUMINÁRIA';
+    cfgInput1.type = 'time';
+    cfgInput2.type = 'time';
+    cfgInput1.step = '';
+    cfgInput2.step = '';
+    cfgInput1.min = '';
+    cfgInput1.max = '';
+    cfgInput2.min = '';
+    cfgInput2.max = '';
+    cfgInput1.value = uiCfgState.lightOn;
+    cfgInput2.value = uiCfgState.lightOff;
+    cfgModalBackdrop.classList.remove('hide');
+    cfgInput1.focus();
+  }
 
   // ---------------------------------------------------------------------------
   // Relógio: sincronizado com o ESP32 e incrementado localmente a cada segundo
@@ -938,6 +1163,9 @@
     const btn    = document.querySelector(`.nav-btn[data-target="${targetId}"]`);
     if (screen) screen.classList.add('active');
     if (btn)    btn.classList.add('active');
+
+    // Carrega logs ao abrir a aba (fetch único, sem polling)
+    if (targetId === 'logs') fetchLogs();
   }
 
   navBtns.forEach((btn) =>
@@ -984,6 +1212,17 @@
     const lightOn = light.on          ?? false;
     const fanOn   = fan.on            ?? false;
     const fanPct  = fan.speed_percent ?? 0;
+    const fanTrigger = Number.parseFloat(fan.trigger_c);
+    const fanOff     = Number.parseFloat(fan.off_c);
+
+    if (Number.isFinite(fanTrigger)) uiCfgState.fanTrigger = fanTrigger;
+    if (Number.isFinite(fanOff))     uiCfgState.fanOff = fanOff;
+    if (typeof rtc.on_time === 'string' && isValidHhmm(rtc.on_time)) {
+      uiCfgState.lightOn = rtc.on_time;
+    }
+    if (typeof rtc.off_time === 'string' && isValidHhmm(rtc.off_time)) {
+      uiCfgState.lightOff = rtc.off_time;
+    }
 
     // --- Temperatura ---
     const hasTemp  = temp.available && temp.celsius != null;
@@ -1052,7 +1291,7 @@
    * @param {Object} [params] - Parâmetros adicionais de query
    */
   async function callApi(endpoint, params = {}) {
-    if (_busy) return;
+    if (_busy) return null;
     _busy = true;
 
     const refreshBtn     = document.getElementById('btn-refresh');
@@ -1074,9 +1313,11 @@
       }
 
       updateUI(json);
+      return json;
 
     } catch (err) {
       showToast('Falha ao comunicar com o aquário: ' + err.message);
+      return null;
     } finally {
       _busy = false;
       setTimeout(() => {
@@ -1108,13 +1349,65 @@
   // Event listeners dos botões
   // ---------------------------------------------------------------------------
   document.getElementById('btn-refresh')
-    .addEventListener('click', () => callApi('status'));
+    .addEventListener('click', () => callApi('rtc_sync'));
 
   document.getElementById('btn-toggle-light')
     .addEventListener('click', () => callApi('toggle'));
 
   document.getElementById('btn-toggle-fan')
     .addEventListener('click', () => callApi('fan_toggle'));
+
+  document.getElementById('fan-temp-val')
+    .addEventListener('click', () => openFanConfigModal());
+
+  document.getElementById('light-on-time')
+    .addEventListener('click', () => openLightScheduleModal());
+
+  document.getElementById('light-off-time')
+    .addEventListener('click', () => openLightScheduleModal());
+
+  cfgCancelBtn.addEventListener('click', closeConfigModal);
+  cfgModalBackdrop.addEventListener('click', (event) => {
+    if (event.target === cfgModalBackdrop) closeConfigModal();
+  });
+
+  cfgSaveBtn.addEventListener('click', async () => {
+    if (_busy) return;
+
+    if (_cfgModalType === 'fan') {
+      const trigger = Number.parseFloat(cfgInput1.value);
+      const off = Number.parseFloat(cfgInput2.value);
+
+      if (!Number.isFinite(trigger) || !Number.isFinite(off)) {
+        showToast('Preencha temperaturas válidas (ex: 29.0 e 27.5).');
+        return;
+      }
+      if (trigger < 15 || trigger > 45 || off < 10 || off > 44.5 || trigger <= off) {
+        showToast('Faixa inválida: trigger 15..45, desligar 10..44.5 e trigger > desligar.');
+        return;
+      }
+
+      const result = await callApi('fan_config', {
+        trigger: z1(trigger),
+        off: z1(off),
+      });
+      if (result) closeConfigModal();
+      return;
+    }
+
+    if (_cfgModalType === 'light') {
+      const on = cfgInput1.value;
+      const off = cfgInput2.value;
+
+      if (!isValidHhmm(on) || !isValidHhmm(off)) {
+        showToast('Use horário no formato HH:MM (24h).');
+        return;
+      }
+
+      const result = await callApi('light_schedule', { on, off });
+      if (result) closeConfigModal();
+    }
+  });
 
   // ---------------------------------------------------------------------------
   // Registra o service worker para habilitar a instalação como PWA
@@ -1128,6 +1421,63 @@
       console.warn('Falha ao registrar service worker:', err);
     });
   }
+
+  // ---------------------------------------------------------------------------
+  // Logs do sistema
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Busca os logs retidos no broker via PHP e atualiza a tela.
+   * Chamado uma única vez ao abrir a aba de logs.
+   */
+  async function fetchLogs() {
+    const el = document.getElementById('log-output');
+    el.innerHTML = '<span class="log-empty">Carregando...</span>';
+    try {
+      const res  = await fetch(apiUrl('logs'));
+      const data = await res.json();
+      renderLogs(data.logs ?? []);
+    } catch (_) {
+      el.innerHTML = '<span class="log-empty">Erro ao carregar logs.</span>';
+    }
+  }
+
+  /**
+   * Renderiza o array de entradas de log no bloco de código.
+   * @param {Array<{t: string, m: string}>} entries
+   */
+  function renderLogs(entries) {
+    const el = document.getElementById('log-output');
+    if (!entries.length) {
+      el.innerHTML = '<span class="log-empty">Nenhum log registrado.</span>';
+      return;
+    }
+    el.innerHTML = entries.map((e) =>
+      `<span class="log-ts">[${escHtml(e.t)}]</span> <span class="log-msg">${escHtml(e.m)}</span>`
+    ).join('\n');
+    el.scrollTop = el.scrollHeight;
+  }
+
+  /**
+   * Escapa caracteres especiais HTML para exibição segura.
+   * @param {string} s
+   * @returns {string}
+   */
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  document.getElementById('btn-clear-logs').addEventListener('click', async () => {
+    try {
+      await fetch(apiUrl('logs_clear'));
+      renderLogs([]);
+    } catch (_) {
+      showToast('Erro ao limpar logs');
+    }
+  });
 
   // ---------------------------------------------------------------------------
   // Inicialização

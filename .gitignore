@@ -4,3 +4,5 @@ server/config.php
 .claude/
 .idea/
 tmp/
+server/vendor/
+server/composer.lock

@@ -1,5 +1,6 @@
 #include "wifi_manager.h"
 #include "config.h"
+#include "log_manager.h"
 #include <Preferences.h>
 #include <WiFi.h>
 
@@ -87,17 +88,25 @@ static bool _save_credentials(const String &ssid, const String &password) {
 
 static void _configure_static_ip_once() {
   if (_ip_configured_once) return;
+  _ip_configured_once = true;
 
-  IPAddress local_IP, gateway, subnet;
-  local_IP.fromString(NET_LOCAL_IP);
+  // "0.0.0.0" é o sinal para usar DHCP — útil quando a rede muda e o portal
+  // de recuperação não tem como alterar o IP estático em runtime.
+  IPAddress local_IP;
+  if (!local_IP.fromString(NET_LOCAL_IP) || local_IP == IPAddress(0, 0, 0, 0)) {
+    Serial.println("[WiFi] IP dinamico (DHCP) — IP atribuido sera exibido ao conectar");
+    return;  // Não chama WiFi.config: usa DHCP automaticamente
+  }
+
+  IPAddress gateway, subnet;
   gateway.fromString(NET_GATEWAY);
   subnet.fromString(NET_SUBNET);
 
   if (!WiFi.config(local_IP, gateway, subnet)) {
-    Serial.println("[WiFi] Falha ao configurar IP estatico");
+    Serial.println("[WiFi] Falha ao configurar IP estatico — usando DHCP como fallback");
+  } else {
+    Serial.printf("[WiFi] IP estatico configurado: %s\n", NET_LOCAL_IP);
   }
-
-  _ip_configured_once = true;
 }
 
 static String _build_recovery_ap_ssid() {
@@ -130,6 +139,7 @@ static void _start_recovery_ap() {
   }
 
   _recovery_ap_active = true;
+  log_eventf("[WiFi] AP recuperacao ativo: %s", _recovery_ap_ssid.c_str());
   Serial.printf("[WiFi] AP de recuperacao ativo: SSID=%s IP=%s\n",
                 _recovery_ap_ssid.c_str(),
                 WiFi.softAPIP().toString().c_str());
@@ -144,6 +154,7 @@ static void _stop_recovery_ap() {
   WiFi.mode(WIFI_STA);
   _recovery_ap_active = false;
   _recovery_ap_ssid   = "";
+  log_event("[WiFi] AP recuperacao desativado");
   Serial.println("[WiFi] AP de recuperacao desativado");
 }
 
@@ -183,6 +194,7 @@ void wifi_check_reconnect() {
   if (status == WL_CONNECTED) {
     if (!_ever_connected) {
       _ever_connected = true;
+      log_eventf("[WiFi] Conectado: %s", WiFi.localIP().toString().c_str());
       Serial.print("[WiFi] Conectado! IP: ");
       Serial.println(WiFi.localIP());
     }
@@ -195,6 +207,7 @@ void wifi_check_reconnect() {
 
   if (_ever_connected) {
     _ever_connected = false;
+    log_event("[WiFi] Conexao perdida");
     Serial.println("[WiFi] Conexao perdida. Mantendo operacao local.");
   }
 

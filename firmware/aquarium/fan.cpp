@@ -1,15 +1,26 @@
 #include "fan.h"
 #include "config.h"
 #include "temperature.h"
+#include "log_manager.h"
 #include <Arduino.h>
 #include <esp_arduino_version.h>
+#include <Preferences.h>
+#include <math.h>
 
 // ---------------------------------------------------------------------------
 // Configuração do PWM (LEDC)
 // ---------------------------------------------------------------------------
 static const int LEDC_CHANNEL    = 0;
-static const int LEDC_FREQ_HZ    = 25000;   // 25 kHz — frequência típica para ventoinhas PWM 4 pinos
+static const int LEDC_FREQ_HZ    = 20000;   // 20 kHz — bom compromisso para fan 2 fios via MOSFET
 static const int LEDC_RESOLUTION = 8;       // 8 bits → valores 0–255
+
+#define FAN_CFG_NS             "aq_cfg"
+#define FAN_CFG_KEY_TRIGGER    "fan_trig"
+#define FAN_CFG_KEY_OFF        "fan_off"
+static const float FAN_TRIGGER_MIN_C = 15.0f;
+static const float FAN_TRIGGER_MAX_C = 45.0f;
+static const float FAN_OFF_MIN_C     = 10.0f;
+static const float FAN_OFF_MAX_C     = 44.5f;
 
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
 #define FAN_LEDC_TARGET PIN_FAN
@@ -19,6 +30,15 @@ static const int LEDC_RESOLUTION = 8;       // 8 bits → valores 0–255
 
 #ifndef FAN_FAILSAFE_SPEED
 #define FAN_FAILSAFE_SPEED FAN_SPEED_LOW
+#endif
+#ifndef FAN_MIN_RUNNING_PCT
+#define FAN_MIN_RUNNING_PCT 25
+#endif
+#ifndef FAN_STARTUP_BOOST_PCT
+#define FAN_STARTUP_BOOST_PCT 65
+#endif
+#ifndef FAN_STARTUP_BOOST_MS
+#define FAN_STARTUP_BOOST_MS 350UL
 #endif
 
 // ---------------------------------------------------------------------------
@@ -65,6 +85,7 @@ static FanMode      _mode      = FAN_MODE_AUTO;
 static FanAutoState _auto_st   = FAN_AUTO_IDLE;
 static int          _pwm_val   = 0;   // 0–255
 static int          _speed_pct = 0;   // 0–100
+static int          _duty_pct  = 0;   // duty efetivamente aplicado (0–100)
 
 // Cooldown: instante de início e duração calculada a partir de FAN_COOLDOWN_MIN
 static unsigned long _cooldown_start_ms  = 0;
@@ -72,6 +93,9 @@ static const unsigned long COOLDOWN_MS   = (unsigned long)FAN_COOLDOWN_MIN * 60U
 
 // Velocidade manual lembrada para o toggle (liga na última velocidade usada)
 static int _last_manual_pct = 50;
+static bool          _startup_boost_active     = false;
+static unsigned long _startup_boost_started_ms = 0;
+static int           _startup_target_pct       = 0;
 
 // ---------------------------------------------------------------------------
 // Calibração do potenciômetro
@@ -88,17 +112,75 @@ static bool _pot_min_latched  = false;
 
 // Modo de segurança quando a temperatura fica indisponível/stale.
 static bool _temp_failsafe_active = false;
+static float _auto_trigger_c = TEMP_FAN_TRIGGER;
+static float _auto_off_c     = TEMP_FAN_OFF;
 
 // ---------------------------------------------------------------------------
 // Helpers privados
 // ---------------------------------------------------------------------------
 
-/** @brief Aplica percentual (0–100) como duty PWM e atualiza variáveis de estado. */
+static void _write_duty(int pct) {
+  pct       = constrain(pct, 0, 100);
+  _pwm_val  = (int)((long)pct * 255L / 100L);
+  _duty_pct = pct;
+  ledcWrite(FAN_LEDC_TARGET, _pwm_val);
+}
+
+/**
+ * @brief Aplica percentual lógico (0–100) com suporte a fan 2 fios:
+ *        - mantém 0 como desligado imediato
+ *        - aplica piso mínimo quando > 0
+ *        - em transição OFF->ON aplica impulso de partida não-bloqueante
+ */
 static void _apply_speed(int pct) {
   pct        = constrain(pct, 0, 100);
-  _pwm_val   = (int)((long)pct * 255L / 100L);
   _speed_pct = pct;
-  ledcWrite(FAN_LEDC_TARGET, _pwm_val);
+
+  if (pct == 0) {
+    _startup_boost_active = false;
+    _startup_target_pct   = 0;
+    _write_duty(0);
+    return;
+  }
+
+  int min_running_pct = constrain((int)FAN_MIN_RUNNING_PCT, 1, 100);
+  int running_pct     = max(pct, min_running_pct);
+
+  if (_startup_boost_active) {
+    _startup_target_pct = running_pct;
+    return;
+  }
+
+  // Se está saindo de 0 para >0, aplica boost curto para garantir partida.
+  if (_duty_pct == 0) {
+    int boost_pct = constrain((int)FAN_STARTUP_BOOST_PCT, min_running_pct, 100);
+    boost_pct = max(boost_pct, running_pct);
+
+    _startup_boost_active     = true;
+    _startup_boost_started_ms = millis();
+    _startup_target_pct       = running_pct;
+    _write_duty(boost_pct);
+
+    Serial.printf("[Fan] Boost de partida: %lums em %d%% (alvo %d%%)\n",
+                  (unsigned long)FAN_STARTUP_BOOST_MS,
+                  boost_pct,
+                  running_pct);
+    return;
+  }
+
+  _write_duty(running_pct);
+}
+
+static void _process_startup_boost() {
+  if (!_startup_boost_active) return;
+
+  if ((millis() - _startup_boost_started_ms) < (unsigned long)FAN_STARTUP_BOOST_MS) return;
+
+  _startup_boost_active = false;
+  _write_duty(_startup_target_pct);
+  Serial.printf("[Fan] Boost concluido: duty em %d%% (comando %d%%)\n",
+                _startup_target_pct,
+                _speed_pct);
 }
 
 /**
@@ -128,6 +210,50 @@ static void _enter_manual_off() {
   _apply_speed(0);
 }
 
+static bool _thresholds_valid(float trigger_c, float off_c) {
+  if (isnan(trigger_c) || isnan(off_c)) return false;
+  if (trigger_c < FAN_TRIGGER_MIN_C || trigger_c > FAN_TRIGGER_MAX_C) return false;
+  if (off_c < FAN_OFF_MIN_C || off_c > FAN_OFF_MAX_C) return false;
+  return trigger_c > off_c;
+}
+
+static void _save_thresholds_nvs(float trigger_c, float off_c) {
+  Preferences prefs;
+  if (!prefs.begin(FAN_CFG_NS, false)) {
+    Serial.println("[Fan] Falha ao abrir NVS para salvar thresholds");
+    return;
+  }
+  prefs.putFloat(FAN_CFG_KEY_TRIGGER, trigger_c);
+  prefs.putFloat(FAN_CFG_KEY_OFF, off_c);
+  prefs.end();
+}
+
+static void _load_thresholds_nvs() {
+  Preferences prefs;
+  if (!prefs.begin(FAN_CFG_NS, true)) {
+    Serial.println("[Fan] Falha ao abrir NVS. Usando thresholds de config.h");
+    _auto_trigger_c = TEMP_FAN_TRIGGER;
+    _auto_off_c     = TEMP_FAN_OFF;
+    return;
+  }
+
+  float trig = prefs.getFloat(FAN_CFG_KEY_TRIGGER, TEMP_FAN_TRIGGER);
+  float off  = prefs.getFloat(FAN_CFG_KEY_OFF, TEMP_FAN_OFF);
+  prefs.end();
+
+  if (!_thresholds_valid(trig, off)) {
+    _auto_trigger_c = TEMP_FAN_TRIGGER;
+    _auto_off_c     = TEMP_FAN_OFF;
+    Serial.println("[Fan] Thresholds em NVS invalidos. Usando config.h");
+    return;
+  }
+
+  _auto_trigger_c = trig;
+  _auto_off_c     = off;
+  Serial.printf("[Fan] Thresholds AUTO carregados: trigger=%.1fC off=%.1fC\n",
+                _auto_trigger_c, _auto_off_c);
+}
+
 // ---------------------------------------------------------------------------
 // API pública
 // ---------------------------------------------------------------------------
@@ -142,6 +268,7 @@ void fan_init() {
   ledcSetup(LEDC_CHANNEL, LEDC_FREQ_HZ, LEDC_RESOLUTION);
   ledcAttachPin(PIN_FAN, LEDC_CHANNEL);
 #endif
+  _load_thresholds_nvs();
   _apply_speed(0);
   Serial.println("[Fan] Inicializada — desligada (modo AUTO)");
 }
@@ -196,7 +323,33 @@ bool fan_is_on() {
   return _speed_pct > 0;
 }
 
+bool fan_set_auto_thresholds(float trigger_c, float off_c) {
+  if (!_thresholds_valid(trigger_c, off_c)) {
+    return false;
+  }
+
+  _auto_trigger_c = trigger_c;
+  _auto_off_c     = off_c;
+  _save_thresholds_nvs(trigger_c, off_c);
+
+  log_eventf("[Fan] Thresholds atualizados: trigger=%.1fC off=%.1fC",
+             _auto_trigger_c, _auto_off_c);
+  Serial.printf("[Fan] Thresholds AUTO atualizados: trigger=%.1fC off=%.1fC\n",
+                _auto_trigger_c, _auto_off_c);
+  return true;
+}
+
+float fan_get_trigger_c() {
+  return _auto_trigger_c;
+}
+
+float fan_get_off_c() {
+  return _auto_off_c;
+}
+
 void fan_update() {
+  _process_startup_boost();
+
   // ── 1. Potenciômetro ─────────────────────────────────────────────────────
   int pot_raw = analogRead(PIN_POT);
   if (_pot_filtered_adc < 0) {
@@ -269,8 +422,8 @@ void fan_update() {
 
     case FAN_AUTO_IDLE:
       // Aguardando temperatura subir acima do trigger
-      if (temp > TEMP_FAN_TRIGGER) {
-        float delta = temp - TEMP_FAN_TRIGGER;
+      if (temp > _auto_trigger_c) {
+        float delta = temp - _auto_trigger_c;
         int   speed = _auto_speed(delta);
         _apply_speed(speed);
         _auto_st = FAN_AUTO_RUNNING;
@@ -280,16 +433,16 @@ void fan_update() {
       break;
 
     case FAN_AUTO_RUNNING:
-      if (temp < TEMP_FAN_OFF) {
+      if (temp < _auto_off_c) {
         // Temperatura abaixo do limiar de desligamento: inicia cooldown com velocidade reduzida
         _cooldown_start_ms = millis();
         _apply_speed(FAN_SPEED_LOW);
         _auto_st = FAN_AUTO_COOLDOWN;
         Serial.printf("[Fan] AUTO RUNNING→COOLDOWN: %.1f°C — %d min, %d%%\n",
                       temp, FAN_COOLDOWN_MIN, FAN_SPEED_LOW);
-      } else if (temp >= TEMP_FAN_TRIGGER) {
+      } else if (temp >= _auto_trigger_c) {
         // Ainda acima do trigger: ajusta velocidade conforme delta atual
-        float delta    = temp - TEMP_FAN_TRIGGER;
+        float delta    = temp - _auto_trigger_c;
         int   speed    = _auto_speed(delta);
         if (speed != _speed_pct) {
           _apply_speed(speed);
@@ -301,9 +454,9 @@ void fan_update() {
       break;
 
     case FAN_AUTO_COOLDOWN:
-      if (temp > TEMP_FAN_TRIGGER) {
+      if (temp > _auto_trigger_c) {
         // Temperatura subiu novamente durante o cooldown: cancela e retoma controle
-        float delta = temp - TEMP_FAN_TRIGGER;
+        float delta = temp - _auto_trigger_c;
         int   speed = _auto_speed(delta);
         _apply_speed(speed);
         _auto_st = FAN_AUTO_RUNNING;

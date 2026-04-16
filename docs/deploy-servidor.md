@@ -1,207 +1,166 @@
-# 📄 Documento Técnico — Endpoint Oculto em Ambiente WordPress
+# Deploy no EC2 (Amazon Linux 2023) com Docker + Nginx Gateway
 
-## 🎯 Objetivo
+Este guia cobre o deploy da aplicacao do aquario em um servidor com:
 
-Implementar um endpoint HTTP simples (GET/POST) dentro de um servidor WordPress existente, sem interferir no funcionamento da aplicação principal e mantendo baixa visibilidade para outros desenvolvedores.
+- `apps-gateway` (Nginx central em container)
+- projetos multiplos no diretorio `/home/ec2-user/apps`
+- backend PHP/FPM em container
+- broker HiveMQ via MQTT TLS (`8883`)
 
-O endpoint será utilizado para fins pessoais e não requer autenticação complexa nem persistência em banco de dados.
+## Decisao de transporte MQTT
 
----
+A versao atual do `server/` usa MQTT TLS padrao (`8883`) e nao WebSocket.
 
-## 🏗️ Contexto do Ambiente
+Motivo pratico: menor overhead de protocolo no servidor (sem handshake/frame WebSocket) mantendo criptografia TLS fim a fim.
 
-O servidor já hospeda uma aplicação baseada em WordPress com WooCommerce, utilizando a estrutura padrão:
+## Nome discreto do projeto no servidor
 
-* `wp-admin/`
-* `wp-content/`
-* `wp-includes/`
-* arquivos raiz como `index.php`, `.htaccess`, `wp-config.php`, etc.
+Diretorio recomendado:
 
-O WordPress utiliza regras de rewrite que redirecionam requisições não resolvidas para o `index.php`.
+- `/home/ec2-user/apps/rm-cache-runtime`
 
-Importante:
+## 1) Subir o codigo no EC2
 
-* Requisições para arquivos/pastas que **existem fisicamente** não passam pelo WordPress
-* Isso permite criar endpoints independentes dentro do mesmo servidor
+No EC2:
 
----
-
-## 📁 Estratégia de Implementação
-
-O endpoint será implementado dentro do diretório:
-
-```
-/wp-content/uploads/.cache-api/
+```bash
+cd /home/ec2-user/apps
+mkdir -p rm-cache-runtime
+cd rm-cache-runtime
+# clone/copie este repositorio aqui
 ```
 
-### Justificativa:
+Estrutura esperada:
 
-* `uploads` é um diretório já existente e funcional
-* Diretórios iniciados com `.` são menos visíveis
-* Não interfere no core do WordPress
-* Não aparece na biblioteca de mídia (não indexado no banco)
+- `/home/ec2-user/apps/rm-cache-runtime/server/index.php`
+- `/home/ec2-user/apps/rm-cache-runtime/server/app.html`
+- `/home/ec2-user/apps/rm-cache-runtime/server/mqtt_client.php`
+- `/home/ec2-user/apps/rm-cache-runtime/server/config.php`
 
----
+## 2) Configurar `server/config.php`
 
-## 🌐 Estratégia de Acesso (Segurança + Discrição)
+Base em `server/config.example.php`:
 
-O endpoint será acessado através de uma URL disfarçada como arquivo estático:
+- `secret`
+- `mqtt_host`
+- `mqtt_port` = `8883`
+- `mqtt_user`
+- `mqtt_password`
 
-```
-/wp-content/uploads/.cache-api/cache-<SECRET>.js
-```
+## 3) Criar stack Docker do aquario (PHP-FPM)
 
-### Exemplo:
+Em `/home/ec2-user/apps/rm-cache-runtime/docker-compose.yml`:
 
-```
-https://dominio.com/wp-content/uploads/.cache-api/cache-k92jd8s.js
-```
+```yaml
+services:
+  aquarium-php:
+    image: php:8.3-fpm-alpine
+    container_name: aquarium-php
+    restart: unless-stopped
+    volumes:
+      - /home/ec2-user/apps/rm-cache-runtime/server:/var/www/rm-cache-runtime/server:ro
+    working_dir: /var/www/rm-cache-runtime/server
+    networks:
+      - apps_gateway_net
+    healthcheck:
+      test: ["CMD-SHELL", "php-fpm -t || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
-### Características:
-
-* O arquivo **não existe fisicamente**
-* A URL é interceptada via `.htaccess`
-* O `<SECRET>` funciona como chave de acesso
-* A URL simula um asset comum (JS), reduzindo suspeita
-
----
-
-## 🔧 Configuração do Servidor (.htaccess)
-
-Arquivo localizado em:
-
-```
-/wp-content/uploads/.cache-api/.htaccess
-```
-
-Conteúdo:
-
-```apache
-Options -Indexes
-
-RewriteEngine On
-
-# Roteia requisições disfarçadas para o index.php
-RewriteRule ^cache-([a-zA-Z0-9]+)\.js$ index.php?key=$1 [L]
-
-# Bloqueia qualquer acesso direto que não siga o padrão
-RewriteCond %{REQUEST_URI} !^/wp-content/uploads/.cache-api/cache-[a-zA-Z0-9]+\.js$
-RewriteRule ^ - [F]
+networks:
+  apps_gateway_net:
+    external: true
+    name: apps_gateway_net
 ```
 
----
+Subir:
 
-## 🧠 Lógica da Aplicação (index.php)
-
-Responsabilidades:
-
-1. Validar o secret recebido via URL
-2. Permitir apenas requisições autorizadas
-3. Processar métodos GET e POST
-4. Retornar respostas simples (JSON ou HTML)
-
-### Exemplo base:
-
-```php
-<?php
-
-$SECRET = 'k92jd8s';
-
-$key = $_GET['key'] ?? '';
-
-if ($key !== $SECRET) {
-    http_response_code(403);
-    exit('Forbidden');
-}
-
-// Define resposta como JSON
-header('Content-Type: application/json');
-
-// Roteamento simples
-$method = $_SERVER['REQUEST_METHOD'];
-
-if ($method === 'GET') {
-    echo json_encode([
-        'status' => 'ok',
-        'method' => 'GET'
-    ]);
-    exit;
-}
-
-if ($method === 'POST') {
-    $input = file_get_contents('php://input');
-
-    echo json_encode([
-        'status' => 'ok',
-        'method' => 'POST',
-        'data' => $input
-    ]);
-    exit;
-}
-
-// Método não permitido
-http_response_code(405);
-echo json_encode(['error' => 'Method not allowed']);
+```bash
+cd /home/ec2-user/apps/rm-cache-runtime
+docker compose up -d
+docker ps | grep aquarium-php
 ```
 
----
+## 4) Ajustar gateway Nginx
 
-## 🔒 Considerações de Segurança
+Os arquivos de referencia foram atualizados neste repositorio em `tmp/`:
 
-* O endpoint não deve expor erros (desativar `display_errors`)
-* O secret deve ser suficientemente aleatório
-* Evitar uso de query strings para autenticação
-* O uso de URL disfarçada reduz visibilidade, mas não substitui segurança real
-* Idealmente rodar apenas sob HTTPS
+- `tmp/docker-compose.yml`
+- `tmp/nginx.conf`
 
----
+### 4.1 `docker-compose` do gateway
 
-## 👻 Discrição e Invisibilidade
+Adicionar volume read-only para o codigo do aquario:
 
-Medidas adotadas:
+- `/home/ec2-user/apps/rm-cache-runtime/server:/var/www/rm-cache-runtime/server:ro`
 
-* Diretório oculto (`.cache-api`)
-* Nome que simula cache/asset
-* Endpoint mascarado como `.js`
-* Sem arquivos reais correspondentes
-* Fora do core do WordPress
+### 4.2 `nginx.conf` do gateway
 
-Resultado:
+Blocos adicionados para:
 
-* Baixa probabilidade de detecção em debug casual
-* Não interfere em deploy ou funcionamento do WP
-* Não aparece no painel administrativo
+1. receber `/rm-cache-runtime/cache-<secret>.js`
+2. encaminhar para `aquarium-php:9000` (FastCGI)
+3. injetar `key=<secret>` no query string (equivalente ao `.htaccess`)
+4. liberar somente icones PWA (`betta-icon-192/512`)
+5. bloquear o resto de `/rm-cache-runtime/` com `403`
 
----
+Aplicar e recarregar gateway:
 
-## ⚠️ Restrições e Boas Práticas
+```bash
+cd /home/ec2-user/apps/rm-apps-gateway
+docker compose up -d
+docker exec -it apps-gateway nginx -t
+docker exec -it apps-gateway nginx -s reload
+```
 
-Não fazer:
+## 5) Testes de conectividade MQTT no servidor
 
-* Não modificar `wp-includes` ou `wp-admin`
-* Não alterar `.htaccess` principal do WordPress
-* Não expor o endpoint publicamente sem necessidade
-* Não reutilizar o mesmo secret em outros contextos
+Teste no host EC2:
 
----
+```bash
+HOST="SEU_CLUSTER.s1.eu.hivemq.cloud"
+PORT=8883
+timeout 6 bash -lc "cat < /dev/null > /dev/tcp/$HOST/$PORT" && echo "TCP OK" || echo "TCP FALHOU"
+timeout 10 openssl s_client -connect "$HOST:$PORT" -servername "$HOST" -brief < /dev/null
+```
 
-## 🚀 Possíveis Extensões Futuras
+Teste dentro do container PHP:
 
-* Adicionar logs de requisição
-* Implementar whitelist de IP
-* Adicionar múltiplas rotas internas
-* Criar um mini-router
-* Validar payloads JSON
+```bash
+docker exec -it aquarium-php php -r '
+$h="SEU_CLUSTER.s1.eu.hivemq.cloud"; $p=8883;
+$ctx=stream_context_create(["ssl"=>["verify_peer"=>true,"verify_peer_name"=>true,"peer_name"=>$h,"SNI_enabled"=>true]]);
+$e=0; $s="";
+$fp=@stream_socket_client("tls://$h:$p",$e,$s,8,STREAM_CLIENT_CONNECT,$ctx);
+var_export(["ok"=>(bool)$fp,"errno"=>$e,"error"=>$s]); echo PHP_EOL;
+if($fp) fclose($fp);
+'
+```
 
----
+## 6) Testes funcionais da aplicacao
 
-## ✅ Conclusão
+Assumindo dominio `router.recifemecatron.com`:
 
-A solução proposta:
+1. Abrir:
+   - `https://router.recifemecatron.com/rm-cache-runtime/cache-<secret>.js`
+2. Testar API:
+   - `?api=status`
+   - `?api=logs`
+   - `?api=rtc_sync`
+   - `?api=fan_config&trigger=29.0&off=27.5`
+   - `?api=light_schedule&on=10:00&off=17:00`
+3. Diagnostico detalhado:
+   - `?api=diag_mqtt&debug=1`
+4. Validar PWA:
+   - `?manifest=1`
+   - `?sw=1`
+5. Confirmar bloqueio:
+   - `https://router.recifemecatron.com/rm-cache-runtime/qualquer-coisa` -> `403`
 
-* É simples e eficiente
-* Não interfere no WordPress
-* Mantém baixo nível de exposição
-* Atende ao objetivo de uso pessoal com segurança básica adequada
+## 7) Observacoes importantes
 
----
+- Em Nginx, `.htaccess` nao tem efeito. As regras de seguranca ficam no `nginx.conf`.
+- O endpoint protegido continua sendo `cache-<secret>.js`.
+- Se `diag_mqtt` retornar `Connection refused` ou timeout, o bloqueio e de rede/egress do ambiente.
+- Mantenha `server/config.php` fora de versionamento.

@@ -46,3 +46,10 @@ String rtc_get_on_time();
  * @brief Retorna o horário de desligar configurado como "HH:MM".
  */
 String rtc_get_off_time();
+
+/**
+ * @brief Atualiza horário de ligar/desligar da automação e persiste em NVS.
+ *        A nova programação é aplicada imediatamente.
+ * @return true se os valores forem válidos e aplicados.
+ */
+bool rtc_set_schedule(uint8_t on_hour, uint8_t on_min, uint8_t off_hour, uint8_t off_min);

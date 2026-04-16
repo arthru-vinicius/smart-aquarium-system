@@ -3,6 +3,7 @@
 /**
  * @brief Inicializa o canal LEDC (PWM) para controle da ventoinha.
  *        Estado inicial: desligada. Modo inicial: AUTO.
+ *        Implementação atual: ventoinha 12V 2 fios via MOSFET (low-side).
  */
 void fan_init();
 
@@ -41,6 +42,7 @@ void fan_toggle_web();
 
 /**
  * @brief Retorna a velocidade atual da ventoinha como percentual (0–100).
+ *        Observação: o hardware pode aplicar duty mínimo/boost de partida.
  */
 int fan_get_speed_percent();
 
@@ -48,3 +50,21 @@ int fan_get_speed_percent();
  * @brief Retorna true se a ventoinha estiver ligada (velocidade > 0).
  */
 bool fan_is_on();
+
+/**
+ * @brief Atualiza os thresholds do modo AUTO e persiste em NVS.
+ * @param trigger_c temperatura para ligar a ventoinha
+ * @param off_c     temperatura para iniciar desligamento/cooldown
+ * @return true se valores válidos e aplicados; false caso inválidos
+ */
+bool fan_set_auto_thresholds(float trigger_c, float off_c);
+
+/**
+ * @brief Retorna o threshold de temperatura para ligar no AUTO.
+ */
+float fan_get_trigger_c();
+
+/**
+ * @brief Retorna o threshold de temperatura para desligar/cooldown no AUTO.
+ */
+float fan_get_off_c();
