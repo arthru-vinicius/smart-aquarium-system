@@ -11,7 +11,7 @@
 // Configuração do PWM (LEDC)
 // ---------------------------------------------------------------------------
 static const int LEDC_CHANNEL    = 0;
-static const int LEDC_FREQ_HZ    = 20000;   // 20 kHz — bom compromisso para fan 2 fios via MOSFET
+static const int LEDC_FREQ_HZ    = 25000;   // 25 kHz — padrão PWM para fan 4 pinos (CPU fan)
 static const int LEDC_RESOLUTION = 8;       // 8 bits → valores 0–255
 
 #define FAN_CFG_NS             "aq_cfg"
@@ -31,16 +31,12 @@ static const float FAN_OFF_MAX_C     = 44.5f;
 #ifndef FAN_FAILSAFE_SPEED
 #define FAN_FAILSAFE_SPEED FAN_SPEED_LOW
 #endif
-#ifndef FAN_MIN_RUNNING_PCT
-#define FAN_MIN_RUNNING_PCT 25
+#ifndef FAN_ESCALATION_INTERVAL_MIN
+#define FAN_ESCALATION_INTERVAL_MIN 10
 #endif
-#ifndef FAN_STARTUP_BOOST_PCT
-#define FAN_STARTUP_BOOST_PCT 65
+#ifndef FAN_ESCALATION_DROP_C
+#define FAN_ESCALATION_DROP_C 0.5f
 #endif
-#ifndef FAN_STARTUP_BOOST_MS
-#define FAN_STARTUP_BOOST_MS 350UL
-#endif
-
 // ---------------------------------------------------------------------------
 // Thresholds do potenciômetro
 // ---------------------------------------------------------------------------
@@ -83,9 +79,7 @@ enum FanAutoState {
 // ---------------------------------------------------------------------------
 static FanMode      _mode      = FAN_MODE_AUTO;
 static FanAutoState _auto_st   = FAN_AUTO_IDLE;
-static int          _pwm_val   = 0;   // 0–255
-static int          _speed_pct = 0;   // 0–100
-static int          _duty_pct  = 0;   // duty efetivamente aplicado (0–100)
+static int          _speed_pct = 0;
 
 // Cooldown: instante de início e duração calculada a partir de FAN_COOLDOWN_MIN
 static unsigned long _cooldown_start_ms  = 0;
@@ -93,9 +87,18 @@ static const unsigned long COOLDOWN_MS   = (unsigned long)FAN_COOLDOWN_MIN * 60U
 
 // Velocidade manual lembrada para o toggle (liga na última velocidade usada)
 static int _last_manual_pct = 50;
-static bool          _startup_boost_active     = false;
-static unsigned long _startup_boost_started_ms = 0;
-static int           _startup_target_pct       = 0;
+
+// Tacômetro: contagem de pulsos via ISR e RPM calculado a cada janela de amostragem
+static volatile uint32_t _tach_pulses    = 0;
+static uint32_t          _tach_sample_ms = 0;
+static int               _rpm            = 0;
+
+// Escalonamento progressivo no modo AUTO RUNNING: piso mínimo de velocidade quando não há
+// queda térmica suficiente após FAN_ESCALATION_INTERVAL_MIN minutos.
+// Zerado ao entrar em cooldown (temperatura caiu) ou no RTC_ON.
+static int           _escalation_floor_pct = 0;
+static float         _escalation_ref_temp  = 0.0f;
+static unsigned long _escalation_ref_ms    = 0;
 
 // ---------------------------------------------------------------------------
 // Calibração do potenciômetro
@@ -119,68 +122,22 @@ static float _auto_off_c     = TEMP_FAN_OFF;
 // Helpers privados
 // ---------------------------------------------------------------------------
 
-static void _write_duty(int pct) {
-  pct       = constrain(pct, 0, 100);
-  _pwm_val  = (int)((long)pct * 255L / 100L);
-  _duty_pct = pct;
-  ledcWrite(FAN_LEDC_TARGET, _pwm_val);
-}
-
 /**
- * @brief Aplica percentual lógico (0–100) com suporte a fan 2 fios:
- *        - mantém 0 como desligado imediato
- *        - aplica piso mínimo quando > 0
- *        - em transição OFF->ON aplica impulso de partida não-bloqueante
+ * @brief Aplica percentual lógico (0–100) diretamente como duty cycle LEDC.
+ *        Fan 4 pinos: o controlador interno da fan gerencia partida e velocidade mínima.
  */
 static void _apply_speed(int pct) {
   pct        = constrain(pct, 0, 100);
   _speed_pct = pct;
-
-  if (pct == 0) {
-    _startup_boost_active = false;
-    _startup_target_pct   = 0;
-    _write_duty(0);
-    return;
-  }
-
-  int min_running_pct = constrain((int)FAN_MIN_RUNNING_PCT, 1, 100);
-  int running_pct     = max(pct, min_running_pct);
-
-  if (_startup_boost_active) {
-    _startup_target_pct = running_pct;
-    return;
-  }
-
-  // Se está saindo de 0 para >0, aplica boost curto para garantir partida.
-  if (_duty_pct == 0) {
-    int boost_pct = constrain((int)FAN_STARTUP_BOOST_PCT, min_running_pct, 100);
-    boost_pct = max(boost_pct, running_pct);
-
-    _startup_boost_active     = true;
-    _startup_boost_started_ms = millis();
-    _startup_target_pct       = running_pct;
-    _write_duty(boost_pct);
-
-    Serial.printf("[Fan] Boost de partida: %lums em %d%% (alvo %d%%)\n",
-                  (unsigned long)FAN_STARTUP_BOOST_MS,
-                  boost_pct,
-                  running_pct);
-    return;
-  }
-
-  _write_duty(running_pct);
+  ledcWrite(FAN_LEDC_TARGET, (int)((long)pct * 255L / 100L));
 }
 
-static void _process_startup_boost() {
-  if (!_startup_boost_active) return;
-
-  if ((millis() - _startup_boost_started_ms) < (unsigned long)FAN_STARTUP_BOOST_MS) return;
-
-  _startup_boost_active = false;
-  _write_duty(_startup_target_pct);
-  Serial.printf("[Fan] Boost concluido: duty em %d%% (comando %d%%)\n",
-                _startup_target_pct,
-                _speed_pct);
+/**
+ * @brief ISR do tacômetro: incrementa contador a cada pulso de queda (falling edge).
+ *        A fan gera 2 pulsos por revolução nesse pino open-drain (pino 3 do conector).
+ */
+static void IRAM_ATTR _tach_isr() {
+  _tach_pulses++;
 }
 
 /**
@@ -268,9 +225,12 @@ void fan_init() {
   ledcSetup(LEDC_CHANNEL, LEDC_FREQ_HZ, LEDC_RESOLUTION);
   ledcAttachPin(PIN_FAN, LEDC_CHANNEL);
 #endif
+  pinMode(PIN_FAN_TACH, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(PIN_FAN_TACH), _tach_isr, FALLING);
+  _tach_sample_ms = millis();
   _load_thresholds_nvs();
   _apply_speed(0);
-  Serial.println("[Fan] Inicializada — desligada (modo AUTO)");
+  Serial.printf("[Fan] Inicializada — desligada (modo AUTO), tacometro ativo no GPIO%d\n", PIN_FAN_TACH);
 }
 
 void fan_on_rtc_reset() {
@@ -283,8 +243,9 @@ void fan_on_rtc_reset() {
   _pot_adc_prev    = -1;
   _pot_filtered_adc = -1;
   _pot_min_latched  = false;
-  _temp_failsafe_active = false;
-  // Não altera _speed_pct/_pwm_val agora; fan_update() decidirá no próximo ciclo.
+  _temp_failsafe_active  = false;
+  _escalation_floor_pct  = 0;
+  // Não altera _speed_pct agora; fan_update() decidirá no próximo ciclo.
   Serial.println("[Fan] Modo AUTO restaurado (RTC_ON) — re-calibracao do potenciometro necessaria");
 }
 
@@ -323,6 +284,10 @@ bool fan_is_on() {
   return _speed_pct > 0;
 }
 
+int fan_get_rpm() {
+  return _rpm;
+}
+
 bool fan_set_auto_thresholds(float trigger_c, float off_c) {
   if (!_thresholds_valid(trigger_c, off_c)) {
     return false;
@@ -348,7 +313,18 @@ float fan_get_off_c() {
 }
 
 void fan_update() {
-  _process_startup_boost();
+  // ── 0. Tacômetro: amostragem a cada 2 s ─────────────────────────────────
+  uint32_t _now = millis();
+  if (_now - _tach_sample_ms >= 2000UL) {
+    noInterrupts();
+    uint32_t pulses = _tach_pulses;
+    _tach_pulses = 0;
+    interrupts();
+    uint32_t elapsed = _now - _tach_sample_ms;
+    _tach_sample_ms  = _now;
+    // 2 pulsos por volta; elapsed em ms → rpm = pulses * 30000 / elapsed
+    _rpm = elapsed > 0 ? (int)((pulses * 30000UL) / elapsed) : 0;
+  }
 
   // ── 1. Potenciômetro ─────────────────────────────────────────────────────
   int pot_raw = analogRead(PIN_POT);
@@ -424,9 +400,11 @@ void fan_update() {
       // Aguardando temperatura subir acima do trigger
       if (temp > _auto_trigger_c) {
         float delta = temp - _auto_trigger_c;
-        int   speed = _auto_speed(delta);
+        int   speed = max(_auto_speed(delta), _escalation_floor_pct);
         _apply_speed(speed);
-        _auto_st = FAN_AUTO_RUNNING;
+        _auto_st             = FAN_AUTO_RUNNING;
+        _escalation_ref_temp = temp;
+        _escalation_ref_ms   = millis();
         Serial.printf("[Fan] AUTO IDLE→RUNNING: %.1f°C (Δ%.1f°C) → %d%%\n",
                       temp, delta, speed);
       }
@@ -434,32 +412,60 @@ void fan_update() {
 
     case FAN_AUTO_RUNNING:
       if (temp < _auto_off_c) {
-        // Temperatura abaixo do limiar de desligamento: inicia cooldown com velocidade reduzida
-        _cooldown_start_ms = millis();
+        // Temperatura caiu abaixo do limiar: inicia cooldown e reseta piso de escalonamento
+        _cooldown_start_ms    = millis();
+        _escalation_floor_pct = 0;
         _apply_speed(FAN_SPEED_LOW);
         _auto_st = FAN_AUTO_COOLDOWN;
         Serial.printf("[Fan] AUTO RUNNING→COOLDOWN: %.1f°C — %d min, %d%%\n",
                       temp, FAN_COOLDOWN_MIN, FAN_SPEED_LOW);
       } else if (temp >= _auto_trigger_c) {
-        // Ainda acima do trigger: ajusta velocidade conforme delta atual
-        float delta    = temp - _auto_trigger_c;
-        int   speed    = _auto_speed(delta);
+        // Acima do trigger: ajusta velocidade por delta, respeitando o piso de escalonamento
+        float delta = temp - _auto_trigger_c;
+        int   speed = max(_auto_speed(delta), _escalation_floor_pct);
         if (speed != _speed_pct) {
           _apply_speed(speed);
-          Serial.printf("[Fan] AUTO velocidade ajustada: %.1f°C (Δ%.1f°C) → %d%%\n",
-                        temp, delta, speed);
+          Serial.printf("[Fan] AUTO velocidade ajustada: %.1f°C (Δ%.1f°C) → %d%% (piso %d%%)\n",
+                        temp, delta, speed, _escalation_floor_pct);
         }
+
+        // Escalonamento progressivo: verifica progresso térmico a cada intervalo configurado
+        unsigned long now_esc = millis();
+        if (now_esc - _escalation_ref_ms >= (unsigned long)FAN_ESCALATION_INTERVAL_MIN * 60000UL) {
+          float drop = _escalation_ref_temp - temp;
+          if (drop < (float)FAN_ESCALATION_DROP_C && _escalation_floor_pct < FAN_SPEED_MAX) {
+            // Sem queda suficiente: avança o piso para o próximo degrau acima do nível atual
+            int next_floor;
+            if      (_speed_pct < FAN_SPEED_LOW)  next_floor = FAN_SPEED_LOW;
+            else if (_speed_pct < FAN_SPEED_MED)  next_floor = FAN_SPEED_MED;
+            else if (_speed_pct < FAN_SPEED_HIGH) next_floor = FAN_SPEED_HIGH;
+            else                                   next_floor = FAN_SPEED_MAX;
+            if (next_floor > _escalation_floor_pct) {
+              _escalation_floor_pct = next_floor;
+              Serial.printf("[Fan] AUTO escalonamento: queda %.1fC abaixo do minimo (%.1fC) → piso %d%%\n",
+                            drop, (float)FAN_ESCALATION_DROP_C, _escalation_floor_pct);
+            }
+          }
+          _escalation_ref_temp = temp;
+          _escalation_ref_ms   = now_esc;
+        }
+      } else {
+        // Banda de histérese (TEMP_FAN_OFF ≤ temp < TEMP_FAN_TRIGGER):
+        // temperatura aceitável — mantém velocidade atual e reinicia referência de escalonamento
+        _escalation_ref_temp = temp;
+        _escalation_ref_ms   = millis();
       }
-      // Banda de histérese (TEMP_FAN_OFF ≤ temp < TEMP_FAN_TRIGGER): mantém velocidade atual
       break;
 
     case FAN_AUTO_COOLDOWN:
       if (temp > _auto_trigger_c) {
         // Temperatura subiu novamente durante o cooldown: cancela e retoma controle
         float delta = temp - _auto_trigger_c;
-        int   speed = _auto_speed(delta);
+        int   speed = max(_auto_speed(delta), _escalation_floor_pct);
         _apply_speed(speed);
-        _auto_st = FAN_AUTO_RUNNING;
+        _auto_st             = FAN_AUTO_RUNNING;
+        _escalation_ref_temp = temp;
+        _escalation_ref_ms   = millis();
         Serial.printf("[Fan] AUTO COOLDOWN→RUNNING: temperatura voltou (%.1f°C) → %d%%\n",
                       temp, speed);
       } else if (millis() - _cooldown_start_ms >= COOLDOWN_MS) {

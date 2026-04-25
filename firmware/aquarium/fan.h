@@ -1,9 +1,10 @@
 #pragma once
 
 /**
- * @brief Inicializa o canal LEDC (PWM) para controle da ventoinha.
+ * @brief Inicializa o canal LEDC (PWM) e o tacômetro da ventoinha.
  *        Estado inicial: desligada. Modo inicial: AUTO.
- *        Implementação atual: ventoinha 12V 2 fios via MOSFET (low-side).
+ *        Implementação: fan 4 pinos (CPU fan) com PWM direto no PIN_FAN
+ *        e leitura de RPM via interrupção no PIN_FAN_TACH.
  */
 void fan_init();
 
@@ -50,6 +51,13 @@ int fan_get_speed_percent();
  * @brief Retorna true se a ventoinha estiver ligada (velocidade > 0).
  */
 bool fan_is_on();
+
+/**
+ * @brief Retorna a rotação atual da ventoinha em RPM.
+ *        Valor calculado a cada 2 segundos a partir do sinal de tacômetro (pino 3 da fan).
+ *        Retorna 0 se a ventoinha estiver parada ou durante o primeiro período de amostragem.
+ */
+int fan_get_rpm();
 
 /**
  * @brief Atualiza os thresholds do modo AUTO e persiste em NVS.

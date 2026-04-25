@@ -6,3 +6,4 @@ server/config.php
 tmp/
 server/vendor/
 server/composer.lock
+.playwright-mcp/

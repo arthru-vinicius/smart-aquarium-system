@@ -221,6 +221,10 @@ Pontos importantes:
 - NTP falho não bloqueia boot: sistema retenta sincronização depois.
 - APIs de ventilação validam faixa e formato de entrada.
 
+## Curiosidade
+
+O projeto tem aproximadamente **3.500 linhas de código** (excluindo comentários, linhas em branco e arquivos de documentação) — distribuídas entre firmware C++/Arduino (~1.600 linhas) e servidor PHP/HTML (~1.900 linhas).
+
 ## Roadmap sugerido
 
 - Telemetria de saúde (RSSI, uptime, reset reason) no `/status`

@@ -26,7 +26,8 @@
 #define PIN_DS18B20    19   // DS18B20 — sensor de temperatura (OneWire)
 #define PIN_BUTTON     18   // Push button — liga/desliga luminária (INPUT_PULLUP)
 #define PIN_POT        34   // Potenciômetro B10K — controle de velocidade da ventoinha (ADC)
-#define PIN_FAN        17   // Gate do MOSFET IRLB8721 (PWM LEDC da ventoinha 2 fios)
+#define PIN_FAN        17   // Pino 4 da fan 4 pinos — sinal PWM de controle (25 kHz, direto no ESP32)
+#define PIN_FAN_TACH   25   // Pino 3 da fan 4 pinos — tacômetro (INPUT_PULLUP, open-drain)
 
 // DS3231SN usa I2C padrão do ESP32: SDA = GPIO 21, SCL = GPIO 22
 
@@ -60,10 +61,11 @@
 #define FAN_SPEED_MAX       100     // Δ >  3,0°C — situação crítica
 #define FAN_FAILSAFE_SPEED  30      // velocidade usada no AUTO se temperatura ficar indisponível
 
-// Fan 2 fios (Molex) via MOSFET: piso operacional e impulso de partida
-#define FAN_MIN_RUNNING_PCT   25    // duty mínimo para rotação estável quando pct > 0
-#define FAN_STARTUP_BOOST_PCT 65    // impulso inicial para vencer inércia do motor
-#define FAN_STARTUP_BOOST_MS  350UL // duração do impulso (não-bloqueante)
+// Escalonamento progressivo: se após FAN_ESCALATION_INTERVAL_MIN minutos em modo RUNNING
+// a temperatura não tiver caído FAN_ESCALATION_DROP_C graus, o piso de velocidade avança
+// um degrau (LOW → MED → HIGH → MAX). O piso é zerado ao entrar em cooldown ou no RTC_ON.
+#define FAN_ESCALATION_INTERVAL_MIN  10    // minutos por estágio sem queda suficiente
+#define FAN_ESCALATION_DROP_C        0.5f  // queda mínima de temperatura (°C) para não escalar
 
 // Dados de temperatura são considerados stale após este tempo sem leitura válida
 #define TEMP_MAX_STALE_MS   5000UL

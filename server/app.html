@@ -912,6 +912,12 @@
         <div class="hero-sub"   id="fan-speed-disp">0%</div>
       </div>
 
+      <!-- RPM da ventoinha -->
+      <div class="card" style="margin-bottom:12px">
+        <div class="c-label">Rotação</div>
+        <div class="c-val" id="fan-rpm-val">—</div>
+      </div>
+
       <!-- Controle de potência -->
       <div class="slider-card">
         <div class="slider-header">
@@ -1212,6 +1218,7 @@
     const lightOn = light.on          ?? false;
     const fanOn   = fan.on            ?? false;
     const fanPct  = fan.speed_percent ?? 0;
+    const fanRpm  = fan.rpm           ?? 0;
     const fanTrigger = Number.parseFloat(fan.trigger_c);
     const fanOff     = Number.parseFloat(fan.off_c);
 
@@ -1242,7 +1249,7 @@
       ? `<span class="pill on"><span class="pill-dot"></span>LIGADA</span>`
       : `<span class="pill off"><span class="pill-dot"></span>DESLIGADA</span>`;
 
-    document.getElementById('dash-fan-speed').textContent = fanOn ? `${fanPct}%` : '';
+    document.getElementById('dash-fan-speed').textContent = fanOn ? `${fanPct}%` + (fanRpm > 0 ? ` · ${fanRpm} RPM` : '') : '';
 
     // --- Tela Luminária ---
     document.getElementById('light-hero').className =
@@ -1266,6 +1273,9 @@
 
     document.getElementById('fan-speed-disp').textContent =
       fanOn ? `${fanPct}%` : '0%';
+
+    document.getElementById('fan-rpm-val').textContent =
+      fanOn && fanRpm > 0 ? `${fanRpm} RPM` : '—';
 
     // Slider: ativo somente quando ventoinha está ligada
     const slider = document.getElementById('fan-speed-slider');

@@ -166,7 +166,7 @@ static String _build_wifi_setup_page(const String &message, bool isError) {
  * {
  *   "light":       { "on": bool },
  *   "temperature": { "celsius": float|null, "available": bool, "valid": bool },
- *   "fan":         { "on": bool, "speed_percent": int,
+ *   "fan":         { "on": bool, "speed_percent": int, "rpm": int,
  *                    "trigger_c": float, "off_c": float },
  *   "rtc":         { "time": "HH:MM", "available": bool,
  *                    "on_time": "HH:MM", "off_time": "HH:MM" }
@@ -195,6 +195,7 @@ static String _build_json() {
   JsonObject fan_obj       = doc.createNestedObject("fan");
   fan_obj["on"]            = fan_is_on();
   fan_obj["speed_percent"] = fan_get_speed_percent();
+  fan_obj["rpm"]           = fan_get_rpm();
   fan_obj["trigger_c"]     = serialized(String(fan_get_trigger_c(), 1));
   fan_obj["off_c"]         = serialized(String(fan_get_off_c(), 1));
 

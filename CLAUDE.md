@@ -47,7 +47,8 @@ O servidor fica em `server/` e é hospedado dentro de um WordPress existente.
 | Módulo RTC | DS3231SN | I2C (SDA=21, SCL=22) |
 | Push button (luminária) | — | GPIO 18 (definido em `config.h`) |
 | Potenciômetro (ventoinha) | B10K | GPIO 34 ADC (definido em `config.h`) |
-| Controle da ventoinha 2 fios | IRLB8721 (gate) | GPIO 17 (definido em `config.h`) |
+| PWM control da fan (pino 4) | — | GPIO 17 (definido em `config.h`) |
+| Tacômetro da fan (pino 3) | — | GPIO 25 (definido em `config.h`) |
 
 Datasheet do ESP32-WROOM-32D: `docs/esp32-wroom-32d_datasheet_en.pdf`
 
@@ -63,7 +64,7 @@ firmware/aquarium/          ← Pasta do sketch Arduino (nome = nome do .ino)
   wifi_manager.{h,cpp}      ← Conexão e reconexão Wi-Fi
   light.{h,cpp}             ← Relé SSR40DA + push button + debounce
   temperature.{h,cpp}       ← Leitura DS18B20 (DallasTemperature)
-  fan.{h,cpp}               ← ADC potenciômetro + PWM LEDC no MOSFET (fan 2 fios)
+  fan.{h,cpp}               ← ADC potenciômetro + PWM LEDC direto na fan 4 pinos + tacômetro
   rtc_manager.{h,cpp}       ← DS3231SN via RTClib + NTP sync + automação por horário
   web_server.{h,cpp}        ← ESPAsyncWebServer + ArduinoJson + ElegantOTA
 
@@ -114,7 +115,7 @@ A automação por horário é **sempre ativa** — não há botão para desligá
 {
   "light":       { "on": true },
   "temperature": { "celsius": 26.5, "available": true },
-  "fan":         { "on": false, "speed_percent": 0 },
+  "fan":         { "on": false, "speed_percent": 0, "rpm": 0 },
   "rtc":         { "time": "14:32", "available": true,
                    "on_time": "10:00", "off_time": "17:00" }
 }
@@ -126,5 +127,6 @@ A automação por horário é **sempre ativa** — não há botão para desligá
 - ✅ Automação da luminária por horário via DS3231SN + sincronização NTP
 - ✅ OTA de firmware via ElegantOTA
 - ✅ Leitura de temperatura via DS18B20
-- ✅ Controle da ventoinha 2 fios via MOSFET (on/off e velocidade via potenciômetro/web)
-- ✅ Interface web exibindo temperatura e ventoinha
+- ✅ Controle da ventoinha 4 pinos (CPU fan) via PWM direto (on/off e velocidade via potenciômetro/web)
+- ✅ Tacômetro da ventoinha — RPM medido via GPIO25 e exibido na interface
+- ✅ Interface web exibindo temperatura, ventoinha e RPM
